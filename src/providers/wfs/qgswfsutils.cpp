@@ -119,6 +119,7 @@ bool QgsWFSUtils::expressionToOGCFilter( QgsExpression& exp, QDomDocument& doc )
 {
   doc.clear();
   QDomElement filterElem = doc.createElement( "Filter" );
+  filterElem.setAttribute( "xmlns:ogc", "http://www.opengis.net/ogc" );
   doc.appendChild( filterElem );
 
   QgsExpressionOGCVisitor v( doc, filterElem );
