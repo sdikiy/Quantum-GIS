@@ -34,6 +34,12 @@ QgsPalettedRasterRenderer::~QgsPalettedRasterRenderer()
   delete[] mColors;
 }
 
+QgsRasterInterface * QgsPalettedRasterRenderer::clone() const
+{
+  QgsPalettedRasterRenderer * renderer = new QgsPalettedRasterRenderer( 0, mBandNumber, colors(), mNColors );
+  return renderer;
+}
+
 QgsRasterRenderer* QgsPalettedRasterRenderer::create( const QDomElement& elem, QgsRasterInterface* input )
 {
   if ( elem.isNull() )
@@ -87,6 +93,7 @@ void * QgsPalettedRasterRenderer::readBlock( int bandNo, QgsRectangle  const & e
   {
     return 0;
   }
+  QRgb myDefaultColor = qRgba( 0, 0, 0, 0 );
 
   QgsRasterInterface::DataType transparencyType = QgsRasterInterface::UnknownDataType;
   if ( mAlphaBand > 0 )
@@ -123,6 +130,12 @@ void * QgsPalettedRasterRenderer::readBlock( int bandNo, QgsRectangle  const & e
     for ( int j = 0; j < width; ++j )
     {
       val = readValue( rasterData, rasterType, currentRasterPos );
+      if ( mInput->isNoDataValue( mBandNumber, val ) )
+      {
+        imageScanLine[j] = myDefaultColor;
+        ++currentRasterPos;
+        continue;
+      }
       if ( !hasTransparency )
       {
         imageScanLine[j] = mColors[ val ].rgba();

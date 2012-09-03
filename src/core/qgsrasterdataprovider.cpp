@@ -272,6 +272,26 @@ QByteArray QgsRasterDataProvider::noValueBytes( int theBandNo )
   return ba;
 }
 
+bool QgsRasterDataProvider::hasPyramids()
+{
+  QList<QgsRasterPyramid> myPyramidList = buildPyramidList();
+
+  if ( myPyramidList.isEmpty() )
+    return false;
+
+  QList<QgsRasterPyramid>::iterator myRasterPyramidIterator;
+  for ( myRasterPyramidIterator = myPyramidList.begin();
+        myRasterPyramidIterator != myPyramidList.end();
+        ++myRasterPyramidIterator )
+  {
+    if ( myRasterPyramidIterator->exists )
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
 #if 0
 QgsRasterBandStats QgsRasterDataProvider::bandStatistics( int theBandNo )
 {
@@ -538,15 +558,21 @@ QgsRasterBandStats QgsRasterDataProvider::bandStatistics( int theBandNo,
   double myNoDataValue = noDataValue();
   int myDataType = dataType( theBandNo );
 
-  if ( xBlockSize() == 0 || yBlockSize() == 0 ) // should not happen
+  int myXBlockSize = xBlockSize();
+  int myYBlockSize = yBlockSize();
+  if ( myXBlockSize == 0 ) // should not happen, but happens
   {
-    return myRasterBandStats;
+    myXBlockSize = 500;
+  }
+  if ( myYBlockSize == 0 ) // should not happen, but happens
+  {
+    myYBlockSize = 500;
   }
 
-  int myNXBlocks = ( myWidth + xBlockSize() - 1 ) / xBlockSize();
-  int myNYBlocks = ( myHeight + yBlockSize() - 1 ) / yBlockSize();
+  int myNXBlocks = ( myWidth + myXBlockSize - 1 ) / myXBlockSize;
+  int myNYBlocks = ( myHeight + myYBlockSize - 1 ) / myYBlockSize;
 
-  void *myData = CPLMalloc( xBlockSize() * yBlockSize() * ( dataTypeSize( theBandNo ) / 8 ) );
+  void *myData = CPLMalloc( myXBlockSize * myYBlockSize * ( dataTypeSize( theBandNo ) / 8 ) );
 
   double myXRes = myExtent.width() / myWidth;
   double myYRes = myExtent.height() / myHeight;
@@ -561,12 +587,13 @@ QgsRasterBandStats QgsRasterDataProvider::bandStatistics( int theBandNo,
   {
     for ( int myXBlock = 0; myXBlock < myNXBlocks; myXBlock++ )
     {
-      int myBlockWidth = qMin( xBlockSize(), myWidth - myXBlock * xBlockSize() );
-      int myBlockHeight = qMin( yBlockSize(), myHeight - myYBlock * yBlockSize() );
+      QgsDebugMsg( QString( "myYBlock = %1 myXBlock = %2" ).arg( myYBlock ).arg( myXBlock ) );
+      int myBlockWidth = qMin( myXBlockSize, myWidth - myXBlock * myXBlockSize );
+      int myBlockHeight = qMin( myYBlockSize, myHeight - myYBlock * myYBlockSize );
 
-      double xmin = myExtent.xMinimum() + myXBlock * xBlockSize() * myXRes;
+      double xmin = myExtent.xMinimum() + myXBlock * myXBlockSize * myXRes;
       double xmax = xmin + myBlockWidth * myXRes;
-      double ymin = myExtent.yMaximum() - myYBlock * yBlockSize() * myYRes;
+      double ymin = myExtent.yMaximum() - myYBlock * myYBlockSize * myYRes;
       double ymax = ymin - myBlockHeight * myYRes;
 
       QgsRectangle myPartExtent( xmin, ymin, xmax, ymax );
@@ -760,7 +787,7 @@ bool QgsRasterDataProvider::hasHistogram( int theBandNo,
 {
   QgsDebugMsg( QString( "theBandNo = %1 theBinCount = %2 theMinimum = %3 theMaximum = %4 theSampleSize = %5" ).arg( theBandNo ).arg( theBinCount ).arg( theMinimum ).arg( theMaximum ).arg( theSampleSize ) );
   // histogramDefaults() needs statistics if theMinimum or theMaximum is NaN ->
-  // do other checks which dont need statistics before histogramDefaults()
+  // do other checks which don't need statistics before histogramDefaults()
   if ( mHistograms.size() == 0 ) return false;
 
   QgsRasterHistogram myHistogram;
@@ -808,15 +835,21 @@ QgsRasterHistogram QgsRasterDataProvider::histogram( int theBandNo,
   double myNoDataValue = noDataValue();
   int myDataType = dataType( theBandNo );
 
-  if ( xBlockSize() == 0 || yBlockSize() == 0 ) // should not happen
+  int myXBlockSize = xBlockSize();
+  int myYBlockSize = yBlockSize();
+  if ( myXBlockSize == 0 ) // should not happen, but happens
   {
-    return myHistogram;
+    myXBlockSize = 500;
+  }
+  if ( myYBlockSize == 0 ) // should not happen, but happens
+  {
+    myYBlockSize = 500;
   }
 
-  int myNXBlocks = ( myWidth + xBlockSize() - 1 ) / xBlockSize();
-  int myNYBlocks = ( myHeight + yBlockSize() - 1 ) / yBlockSize();
+  int myNXBlocks = ( myWidth + myXBlockSize - 1 ) / myXBlockSize;
+  int myNYBlocks = ( myHeight + myYBlockSize - 1 ) / myYBlockSize;
 
-  void *myData = CPLMalloc( xBlockSize() * yBlockSize() * ( dataTypeSize( theBandNo ) / 8 ) );
+  void *myData = CPLMalloc( myXBlockSize * myYBlockSize * ( dataTypeSize( theBandNo ) / 8 ) );
 
   double myXRes = myExtent.width() / myWidth;
   double myYRes = myExtent.height() / myHeight;
@@ -839,12 +872,12 @@ QgsRasterHistogram QgsRasterDataProvider::histogram( int theBandNo,
   {
     for ( int myXBlock = 0; myXBlock < myNXBlocks; myXBlock++ )
     {
-      int myBlockWidth = qMin( xBlockSize(), myWidth - myXBlock * xBlockSize() );
-      int myBlockHeight = qMin( yBlockSize(), myHeight - myYBlock * yBlockSize() );
+      int myBlockWidth = qMin( myXBlockSize, myWidth - myXBlock * myXBlockSize );
+      int myBlockHeight = qMin( myYBlockSize, myHeight - myYBlock * myYBlockSize );
 
-      double xmin = myExtent.xMinimum() + myXBlock * xBlockSize() * myXRes;
+      double xmin = myExtent.xMinimum() + myXBlock * myXBlockSize * myXRes;
       double xmax = xmin + myBlockWidth * myXRes;
-      double ymin = myExtent.yMaximum() - myYBlock * yBlockSize() * myYRes;
+      double ymin = myExtent.yMaximum() - myYBlock * myYBlockSize * myYRes;
       double ymax = ymin - myBlockHeight * myYRes;
 
       QgsRectangle myPartExtent( xmin, ymin, xmax, ymax );

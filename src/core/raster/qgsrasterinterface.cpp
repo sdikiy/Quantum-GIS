@@ -15,6 +15,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <limits>
 #include <typeinfo>
 
 #include <QByteArray>
@@ -86,6 +87,51 @@ bool QgsRasterInterface::typeIsColor( DataType dataType ) const
   return false;
 }
 
+QgsRasterInterface::DataType QgsRasterInterface::typeWithNoDataValue( DataType dataType, double *noDataValue )
+{
+  DataType newDataType;
+
+  switch ( dataType )
+  {
+    case QgsRasterInterface::Byte:
+      *noDataValue = -32768.0;
+      newDataType = QgsRasterInterface::Int16;
+      break;
+    case QgsRasterInterface::Int16:
+      *noDataValue = -2147483648.0;
+      newDataType = QgsRasterInterface::Int32;
+      break;
+    case QgsRasterInterface::UInt16:
+      *noDataValue = -2147483648.0;
+      newDataType = QgsRasterInterface::Int32;
+      break;
+    case QgsRasterInterface::UInt32:
+    case QgsRasterInterface::Int32:
+    case QgsRasterInterface::Float32:
+    case QgsRasterInterface::Float64:
+      *noDataValue = std::numeric_limits<double>::max() * -1.0;
+      newDataType = QgsRasterInterface::Float64;
+    default:
+      QgsDebugMsg( QString( "Unknow data type %1" ).arg( dataType ) );
+      return UnknownDataType;
+      break;
+  }
+  QgsDebugMsg( QString( "newDataType = %1 noDataValue = %2" ).arg( newDataType ).arg( *noDataValue ) );
+  return newDataType;
+}
+
+inline bool QgsRasterInterface::isNoDataValue( int bandNo, double value ) const
+{
+  // More precise would be qIsNaN(value) && qIsNaN(noDataValue(bandNo)), but probably
+  // not important and slower
+  if ( qIsNaN( value ) ||
+       doubleNear( value, noDataValue( bandNo ) ) )
+  {
+    return true;
+  }
+  return false;
+}
+
 // To give to an image preallocated memory is the only way to avoid memcpy
 // when we want to keep data but delete QImage
 QImage * QgsRasterInterface::createImage( int width, int height, QImage::Format format )
@@ -148,7 +194,7 @@ void QgsRasterInterface::setStatsOn( bool on )
 double QgsRasterInterface::time( bool cumulative )
 {
   // We can calculate total time only, because we have to subtract time of previous
-  // interface(s) and we dont know how to assign bands to each other
+  // interface(s) and we don't know how to assign bands to each other
   double t = 0;
   for ( int i = 1; i < mTime.size(); i++ )
   {
@@ -163,3 +209,4 @@ double QgsRasterInterface::time( bool cumulative )
   }
   return t;
 }
+

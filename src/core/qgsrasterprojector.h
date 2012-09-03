@@ -61,12 +61,20 @@ class CORE_EXPORT QgsRasterProjector : public QgsRasterInterface
     /** \brief The destructor */
     ~QgsRasterProjector();
 
+    QgsRasterInterface * clone() const;
+
     int bandCount() const;
 
     QgsRasterInterface::DataType dataType( int bandNo ) const;
 
     /** \brief set source and destination CRS */
     void setCRS( QgsCoordinateReferenceSystem theSrcCRS, QgsCoordinateReferenceSystem theDestCRS );
+
+    /** \brief Get source CRS */
+    QgsCoordinateReferenceSystem srcCrs() const  { return mSrcCRS; }
+
+    /** \brief Get destination CRS */
+    QgsCoordinateReferenceSystem destCrs() const  { return mDestCRS; }
 
     /** \brief set maximum source resolution */
     void setMaxSrcRes( double theMaxSrcXRes, double theMaxSrcYRes )

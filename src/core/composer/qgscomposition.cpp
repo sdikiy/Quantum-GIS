@@ -118,6 +118,7 @@ void QgsComposition::setNumPages( int pages )
       mPages.removeLast();
     }
   }
+  emit nPagesChanged();
 }
 
 int QgsComposition::numPages() const
@@ -213,7 +214,7 @@ int QgsComposition::pixelFontSize( double pointSize ) const
 {
   //in QgsComposition, one unit = one mm
   double sizeMillimeters = pointSize * 0.3527;
-  return ( sizeMillimeters + 0.5 ); //round to nearest mm
+  return qRound( sizeMillimeters ); //round to nearest mm
 }
 
 double QgsComposition::pointFontSize( int pixelSize ) const
@@ -1121,12 +1122,6 @@ void QgsComposition::addComposerMap( QgsComposerMap* map, bool setDefaultPreview
 
 void QgsComposition::addComposerScaleBar( QgsComposerScaleBar* scaleBar )
 {
-  //take first available map
-  QList<const QgsComposerMap*> mapItemList = composerMapItems();
-  if ( mapItemList.size() > 0 )
-  {
-    scaleBar->setComposerMap( mapItemList.at( 0 ) );
-  }
   addItem( scaleBar );
   emit composerScaleBarAdded( scaleBar );
   clearSelection();

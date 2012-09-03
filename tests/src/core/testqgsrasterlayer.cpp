@@ -30,12 +30,14 @@
 #include <qgsrasterlayer.h>
 #include <qgsrasterpyramid.h>
 #include <qgsrasterbandstats.h>
+#include <qgsrasterpyramid.h>
 #include <qgsmaplayerregistry.h>
 #include <qgsapplication.h>
 #include <qgsmaprenderer.h>
 #include <qgsmaplayerregistry.h>
 #include "qgssinglebandpseudocolorrenderer.h"
 #include "qgsvectorcolorrampv2.h"
+#include "qgscptcityarchive.h"
 
 //qgis unit test includes
 #include <qgsrenderchecker.h>
@@ -58,6 +60,7 @@ class TestQgsRasterLayer: public QObject
     void colorRamp1();
     void colorRamp2();
     void colorRamp3();
+    void colorRamp4();
     void landsatBasic();
     void landsatBasic875Qml();
     void checkDimensions();
@@ -83,7 +86,7 @@ class TestQgsRasterLayer: public QObject
 void TestQgsRasterLayer::initTestCase()
 {
   // init QGIS's paths - true means that all path will be inited from prefix
-  QgsApplication::init( QString() );
+  QgsApplication::init();
   QgsApplication::initQgis();
   // disable any PAM stuff to make sure stats are consistent
   CPLSetConfigOption( "GDAL_PAM_ENABLED", "NO" );
@@ -254,10 +257,18 @@ void TestQgsRasterLayer::colorRamp2()
 
 void TestQgsRasterLayer::colorRamp3()
 {
-  // cpt-city ramp, small selection available in <testdir>/cpt-city
-  QgsCptCityColorRampV2::setBaseDir( mTestDataDir + "cpt-city" );
+  // cpt-city ramp, discrete
+  QgsCptCityArchive::initArchives();
   QVERIFY( testColorRamp( "raster_colorRamp3",
-                          new QgsCptCityColorRampV2( "gmt/GMT_panoply", "" ),
+                          new QgsCptCityColorRampV2( "cb/div/BrBG", "_10" ),
+                          QgsColorRampShader::DISCRETE, 10 ) );
+}
+
+void TestQgsRasterLayer::colorRamp4()
+{
+  // cpt-city ramp, continuous
+  QVERIFY( testColorRamp( "raster_colorRamp4",
+                          new QgsCptCityColorRampV2( "grass/elevation", "" ),
                           QgsColorRampShader::DISCRETE, 10 ) );
 }
 
@@ -329,24 +340,21 @@ void TestQgsRasterLayer::buildExternalOverviews()
   // Ok now we can go on to test
   //
 
-  bool myInternalFlag = false;
-  QgsRasterLayer::RasterPyramidList myPyramidList = mypLayer->buildPyramidList();
+  QgsRasterDataProvider::RasterPyramidsFormat myFormatFlag = QgsRasterDataProvider::PyramidsGTiff;
+  QList< QgsRasterPyramid > myPyramidList = mypLayer->dataProvider()->buildPyramidList();
   for ( int myCounterInt = 0; myCounterInt < myPyramidList.count(); myCounterInt++ )
   {
     //mark to be pyramided
     myPyramidList[myCounterInt].build = true;
   }
   //now actually make the pyramids
-  QString myResult = mypLayer->buildPyramids(
-                       myPyramidList,
-                       "NEAREST",
-                       myInternalFlag
-                     );
+  QString myResult =
+    mypLayer->dataProvider()->buildPyramids( myPyramidList, "NEAREST", myFormatFlag );
   qDebug( "%s", myResult.toLocal8Bit().constData() );
   //
   // Lets verify we have pyramids now...
   //
-  myPyramidList = mypLayer->buildPyramidList();
+  myPyramidList = mypLayer->dataProvider()->buildPyramidList();
   for ( int myCounterInt = 0; myCounterInt < myPyramidList.count(); myCounterInt++ )
   {
     //mark to be pyramided

@@ -70,6 +70,8 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
     //! Destructor
     ~QgsGdalProvider();
 
+    QgsRasterInterface * clone() const;
+
     /** \brief   Renders the layer as an image
      */
     QImage* draw( QgsRectangle  const & viewExtent, int pixelWidth, int pixelHeight );
@@ -194,6 +196,7 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
 
     //void * readBlock( int bandNo, QgsRectangle  const & extent, int width, int height );
 
+    bool srcHasNoDataValue( int bandNo ) const;
     double noDataValue() const;
     void computeMinMax( int bandNo );
     double minimumValue( int bandNo ) const;
@@ -249,14 +252,15 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
 
     QString buildPyramids( const QList<QgsRasterPyramid> &,
                            const QString &  theResamplingMethod = "NEAREST",
-                           bool theTryInternalFlag = false );
-    QList<QgsRasterPyramid> buildPyramidList();
+                           RasterPyramidsFormat theFormat = PyramidsGTiff );
+    QList<QgsRasterPyramid> buildPyramidList( QList<int> overviewList = QList<int>() );
 
     /** \brief Close data set and release related data */
     void closeDataset();
 
     /** Emit a signal to notify of the progress event. */
     void emitProgress( int theType, double theProgress, QString theMessage );
+    void emitProgressUpdate( int theProgress );
 
     static QMap<QString, QString> supportedMimes();
 
@@ -270,6 +274,8 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
 
     /**Writes into the provider datasource*/
     bool write( void* data, int band, int width, int height, int xOffset, int yOffset );
+
+    bool setNoDataValue( int bandNo, double noDataValue );
 
     /**Returns the formats supported by create()*/
     QStringList createFormats() const;

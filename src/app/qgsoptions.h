@@ -72,7 +72,9 @@ class QgsOptions : public QDialog, private Ui::QgsOptionsBase
 
     void fontSizeChanged( const QString &fontSize );
 
-    void toggleStandardDeviation( int );
+    //! Slot to change backbuffering. This is handled when the user changes
+    // the value of the checkbox
+    void toggleEnableBackbuffer( int );
 
     /**
      * Return the desired state of newly added layers. If a layer
@@ -187,6 +189,8 @@ class QgsOptions : public QDialog, private Ui::QgsOptionsBase
 
   private:
     QStringList i18nList();
+    void initContrastEnhancement( QComboBox *cbox, QString name, QString defaultVal );
+    void saveContrastEnhancement( QComboBox *cbox, QString name );
     QgsCoordinateReferenceSystem mDefaultCrs;
     QgsCoordinateReferenceSystem mLayerDefaultCrs;
     bool mLoadedGdalDriverList;

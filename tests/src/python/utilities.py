@@ -67,12 +67,8 @@ def getQgisTestApp():
 
     if QGISAPP is None:
         myGuiFlag = True  # All test will run qgis in gui mode
-        QGISAPP = QgsApplication(sys.argv, myGuiFlag)
-        if 'QGISPATH' in os.environ:
-            myPath = os.environ['QGISPATH']
-            myUseDefaultPathFlag = True
-            QGISAPP.setPrefixPath(myPath, myUseDefaultPathFlag)
 
+        QGISAPP = QgsApplication(sys.argv, myGuiFlag)
         QGISAPP.initQgis()
         s = QGISAPP.showSettings()
         print s

@@ -35,6 +35,7 @@ SET(QGIS_CORE_SRCS
   symbology-ng/qgsgraduatedsymbolrendererv2.cpp
   symbology-ng/qgsrulebasedrendererv2.cpp
   symbology-ng/qgsvectorcolorrampv2.cpp
+  symbology-ng/qgscptcityarchive.cpp
   symbology-ng/qgsstylev2.cpp
   symbology-ng/qgssymbologyv2conversion.cpp
   symbology-ng/qgssvgcache.cpp
@@ -166,6 +167,7 @@ SET(QGIS_CORE_SRCS
   raster/qgsrasterinterface.cpp
   raster/qgsrasteriterator.cpp
   raster/qgsrasterlayer.cpp
+  raster/qgsrasternuller.cpp
   raster/qgsrastertransparency.cpp
   raster/qgsrasterpipe.cpp
   raster/qgsrastershader.cpp
@@ -305,6 +307,8 @@ SET(QGIS_CORE_MOC_HDRS
   gps/qgsgpsdconnection.h
   gps/qextserialport/qextserialport.h
   gps/qextserialport/qextserialenumerator.h
+
+  symbology-ng/qgscptcityarchive.h
 )
 
 
@@ -417,7 +421,7 @@ SET(QGIS_CORE_HDRS
   symbology/qgssymbologyutils.h
 
   symbology-ng/qgscategorizedsymbolrendererv2.h
-  symbology-ng/qgscolorrampv2data.h
+  symbology-ng/qgscolorbrewerpalette.h
   symbology-ng/qgsellipsesymbollayerv2.h
   symbology-ng/qgsfillsymbollayerv2.h
   symbology-ng/qgsgraduatedsymbolrendererv2.h
@@ -436,6 +440,7 @@ SET(QGIS_CORE_HDRS
   symbology-ng/qgssymbologyv2conversion.h
   symbology-ng/qgssymbolv2.h
   symbology-ng/qgsvectorcolorrampv2.h
+  symbology-ng/qgscptcityarchive.h
   symbology-ng/qgsvectorfieldsymbollayer.h
 
   qgsdiagramrendererv2.h
@@ -491,9 +496,10 @@ ENDIF (WIN32)
 # qgis_core library
 
 ADD_LIBRARY(qgis_core SHARED ${QGIS_CORE_SRCS} ${QGIS_CORE_MOC_SRCS} ${QGIS_CORE_HDRS} ${QGIS_CORE_MOC_HDRS})
-SET_TARGET_PROPERTIES(qgis_core PROPERTIES PUBLIC_HEADER "${QGIS_CORE_HDRS};${QGIS_CORE_MOC_HDRS}")
 
-IF(APPLE)
+IF(NOT APPLE)
+  INSTALL(FILES ${QGIS_CORE_HDRS} ${QGIS_CORE_MOC_HDRS} DESTINATION ${QGIS_INCLUDE_DIR})
+ELSE(NOT APPLE)
   SET_TARGET_PROPERTIES(qgis_core PROPERTIES
     CLEAN_DIRECT_OUTPUT 1
     FRAMEWORK 1
@@ -502,8 +508,9 @@ IF(APPLE)
     MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${COMPLETE_VERSION}
     MACOSX_FRAMEWORK_IDENTIFIER org.qgis.qgis_core
     BUILD_WITH_INSTALL_RPATH TRUE
+    PUBLIC_HEADER "${QGIS_CORE_HDRS};${QGIS_CORE_MOC_HDRS}"
   )
-ENDIF(APPLE)
+ENDIF(NOT APPLE)
 
 #generate unversioned libs for android
 IF (NOT ANDROID)

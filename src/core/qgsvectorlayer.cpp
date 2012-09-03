@@ -733,20 +733,26 @@ void QgsVectorLayer::drawRendererV2( QgsRenderContext& rendererContext, bool lab
       {
         break;
       }
-
 #ifndef Q_WS_MAC //MH: disable this on Mac for now to avoid problems with resizing
-      if ( mUpdateThreshold > 0 && 0 == featureCount % mUpdateThreshold )
+#ifdef Q_WS_X11
+      if ( !mEnableBackbuffer ) // do not handle events, as we're already inside a paint event
       {
-        emit screenUpdateRequested();
-        // emit drawingProgress( featureCount, totalFeatures );
-        qApp->processEvents();
+#endif // Q_WS_X11
+        if ( mUpdateThreshold > 0 && 0 == featureCount % mUpdateThreshold )
+        {
+          emit screenUpdateRequested();
+          // emit drawingProgress( featureCount, totalFeatures );
+          qApp->processEvents();
+        }
+        else if ( featureCount % 1000 == 0 )
+        {
+          // emit drawingProgress( featureCount, totalFeatures );
+          qApp->processEvents();
+        }
+#ifdef Q_WS_X11
       }
-      else if ( featureCount % 1000 == 0 )
-      {
-        // emit drawingProgress( featureCount, totalFeatures );
-        qApp->processEvents();
-      }
-#endif //Q_WS_MAC
+#endif // Q_WS_X11
+#endif // Q_WS_MAC
 
       bool sel = mSelectedFeatureIds.contains( fet.id() );
       bool drawMarker = ( mEditable && ( !vertexMarkerOnlyForSelection || sel ) );
@@ -955,6 +961,9 @@ bool QgsVectorLayer::draw( QgsRenderContext& rendererContext )
   //set update threshold before each draw to make sure the current setting is picked up
   QSettings settings;
   mUpdateThreshold = settings.value( "Map/updateThreshold", 0 ).toInt();
+#ifdef Q_WS_X11
+  mEnableBackbuffer = settings.value( "/Map/enableBackbuffer", 1 ).toBool();
+#endif
 
   if ( mUsingRendererV2 )
   {
@@ -2431,7 +2440,7 @@ int QgsVectorLayer::splitFeatures( const QList<QgsPoint>& splitLine, bool topolo
 
         if ( mDataProvider )
         {
-          //use default value where possible (primary key issue), otherwise the value from the original (splitted) feature
+          //use default value where possible (primary key issue), otherwise the value from the original (split) feature
           QgsAttributeMap newAttributes = select_it->attributeMap();
           QVariant defaultValue;
           foreach ( int j, newAttributes.keys() )
@@ -3151,7 +3160,9 @@ bool QgsVectorLayer::readSymbology( const QDomNode& node, QString& errorMessage 
           bool allowNull = editTypeElement.attribute( "allowNull" ) == "true";
           bool orderByValue = editTypeElement.attribute( "orderByValue" ) == "true";
           bool allowMulti = editTypeElement.attribute( "allowMulti", "false" ) == "true";
-          mValueRelations[ name ] = ValueRelationData( id, key, value, allowNull, orderByValue, allowMulti );
+          QString filterAttributeColumn= editTypeElement.attribute( "filterAttributeColumn", QString::null );
+          QString filterAttributeValue = editTypeElement.attribute( "filterAttributeValue", QString::null );
+          mValueRelations[ name ] = ValueRelationData( id, key, value, allowNull, orderByValue, allowMulti, filterAttributeColumn, filterAttributeValue );
         }
         break;
 
@@ -3373,6 +3384,10 @@ bool QgsVectorLayer::writeSymbology( QDomNode& node, QDomDocument& doc, QString&
             editTypeElement.setAttribute( "allowNull", data.mAllowNull ? "true" : "false" );
             editTypeElement.setAttribute( "orderByValue", data.mOrderByValue ? "true" : "false" );
             editTypeElement.setAttribute( "allowMulti", data.mAllowMulti ? "true" : "false" );
+            if ( !data.mFilterAttributeColumn.isNull() )
+              editTypeElement.setAttribute( "filterAttributeColumn", data.mFilterAttributeColumn );
+            if ( !data.mFilterAttributeValue.isNull() )
+              editTypeElement.setAttribute( "filterAttributeValue", data.mFilterAttributeValue );
           }
           break;
 

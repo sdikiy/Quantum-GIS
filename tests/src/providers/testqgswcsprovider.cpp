@@ -62,7 +62,7 @@ class TestQgsWcsProvider: public QObject
 void TestQgsWcsProvider::initTestCase()
 {
   // init QGIS's paths - true means that all path will be inited from prefix
-  QgsApplication::init( QString() );
+  QgsApplication::init();
   QgsApplication::initQgis();
   QString mySettings = QgsApplication::showSettings();
   mySettings = mySettings.replace( "\n", "<br />" );
@@ -296,7 +296,7 @@ void TestQgsWcsProvider::error( QString theMessage, QString &theReport )
 
 double TestQgsWcsProvider::tolerance( double val, int places )
 {
-  // float precission is about 7 decimal digits, double about 16
+  // float precision is about 7 decimal digits, double about 16
   // default places = 6
   return 1. * qPow( 10, qRound( log10( qAbs( val ) ) - places ) );
 }

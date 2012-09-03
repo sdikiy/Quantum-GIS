@@ -14,11 +14,14 @@
 %Include qgsaddremoveitemcommand.sip
 %Include qgsapplication.sip
 %Include qgscomposerattributetable.sip
+%Include qgscomposerframe.sip
+%Include qgscomposerhtml.sip
 %Include qgscomposeritem.sip
 %Include qgscomposeritemcommand.sip
 %Include qgscomposerlabel.sip
 %Include qgscomposerlegend.sip
 %Include qgscomposermap.sip
+%Include qgscomposermultiframe.sip
 %Include qgscomposerpicture.sip
 %Include qgscomposerscalebar.sip
 %Include qgscomposershape.sip
@@ -60,6 +63,7 @@
 %Include qgsproviderregistry.sip
 %Include qgsrasterbandstats.sip
 %Include qgsrasterdataprovider.sip
+%Include qgsrasterinterface.sip
 %Include qgsrasterlayer.sip
 %Include qgsrasterpyramid.sip
 %Include qgsrasterrenderer.sip
@@ -68,7 +72,7 @@
 %Include qgsrastershaderfunction.sip
 %Include qgsrastertransparency.sip
 %Include qgsrasterviewport.sip
-%Include qgsrect.sip
+%Include qgsrectangle.sip
 %Include qgsrendercontext.sip
 %Include qgsrenderer.sip
 %Include qgsrunprocess.sip

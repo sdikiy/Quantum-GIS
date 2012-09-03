@@ -23,9 +23,7 @@ email                : tim at linfiniti.com
 #include "qgsmaptopixel.h"
 #include "qgsprojectfiletransform.h"
 #include "qgsproviderregistry.h"
-#include "qgsrasterbandstats.h"
 #include "qgsrasterlayer.h"
-#include "qgsrasterpyramid.h"
 #include "qgsrasterrendererregistry.h"
 #include "qgsrectangle.h"
 #include "qgsrendercontext.h"
@@ -82,14 +80,6 @@ email                : tim at linfiniti.com
 typedef void buildsupportedrasterfilefilter_t( QString & theFileFiltersString );
 typedef bool isvalidrasterfilename_t( QString const & theFileNameQString, QString & retErrMsg );
 
-// workaround for MSVC compiler which already has defined macro max
-// that interferes with calling std::numeric_limits<int>::max
-#ifdef _MSC_VER
-# ifdef max
-#  undef max
-# endif
-#endif
-
 // Comparison value for equality; i.e., we shouldn't directly compare two
 // floats so it's better to take their difference and see if they're within
 // a certain range -- in this case twenty times the smallest value that
@@ -128,14 +118,18 @@ QgsRasterLayer::QgsRasterLayer(
 {
   QgsDebugMsg( "Entered" );
 
-  // TODO, call constructor with provider key for now
+  // TODO, call constructor with provider key
   init();
   setDataProvider( "gdal" );
 
+  bool defaultLoadedFlag = false;
   if ( mValid && loadDefaultStyleFlag )
   {
-    bool defaultLoadedFlag = false;
     loadDefaultStyle( defaultLoadedFlag );
+  }
+  if ( !defaultLoadedFlag )
+  {
+    setDefaultContrastEnhancement();
   }
   return;
 } // QgsRasterLayer ctor
@@ -164,12 +158,15 @@ QgsRasterLayer::QgsRasterLayer( const QString & uri,
   init();
   setDataProvider( providerKey );
 
-  // load default style if provider is gdal and if no style was given
-  // this should be an argument like in the other constructor
-  if ( mValid && providerKey == "gdal" && loadDefaultStyleFlag )
+  // load default style
+  bool defaultLoadedFlag = false;
+  if ( mValid && loadDefaultStyleFlag )
   {
-    bool defaultLoadedFlag = false;
     loadDefaultStyle( defaultLoadedFlag );
+  }
+  if ( !defaultLoadedFlag )
+  {
+    setDefaultContrastEnhancement();
   }
 
   // Default for the popup menu
@@ -332,6 +329,7 @@ int QgsRasterLayer::bandNumber( QString const & theBandName ) const
   return 0;                     //no band was found
 }
 
+#if 0
 /**
  * Private method to calculate statistics for a band. Populates rasterStatsMemArray.
  * Calculates:
@@ -351,7 +349,6 @@ int QgsRasterLayer::bandNumber( QString const & theBandName ) const
  * @sa RasterBandStats
  * @note This is a cpu intensive and slow task!
  */
-/*
 const QgsRasterBandStats QgsRasterLayer::bandStatistics( int theBandNo )
 {
   QgsDebugMsg( "theBandNo = " + QString::number( theBandNo ) );
@@ -424,7 +421,6 @@ const QgsRasterBandStats QgsRasterLayer::bandStatistics( QString const & theBand
 
   return QgsRasterBandStats();     // return a null one
 }
-*/
 
 QString QgsRasterLayer::buildPyramids( RasterPyramidList const & theRasterPyramidList,
                                        QString const & theResamplingMethod, bool theTryInternalFlag )
@@ -437,6 +433,7 @@ QgsRasterLayer::RasterPyramidList  QgsRasterLayer::buildPyramidList()
 {
   return mDataProvider->buildPyramidList();
 }
+#endif
 
 QString QgsRasterLayer::colorShadingAlgorithmAsString() const
 {
@@ -1559,7 +1556,6 @@ void QgsRasterLayer::init()
   setDrawingStyle( QgsRasterLayer::UndefinedDrawingStyle );
 
   mBandCount = 0;
-  mHasPyramids = false;
   mNoDataValue = -9999.0;
   mValidNoDataValue = false;
 
@@ -1823,12 +1819,7 @@ void QgsRasterLayer::closeDataProvider()
   mValid = false;
   mPipe.remove( mDataProvider );
   mDataProvider = 0;
-
-  //mRasterStatsList.clear();
   mContrastEnhancementList.clear();
-
-  mHasPyramids = false;
-  mPyramidList.clear();
 }
 
 void QgsRasterLayer::setColorShadingAlgorithm( ColorShadingAlgorithm )
@@ -1972,6 +1963,92 @@ void QgsRasterLayer::setContrastEnhancementFunction( QgsContrastEnhancementFunct
       ++myIterator;
     }
   }
+}
+
+void QgsRasterLayer::setDefaultContrastEnhancement()
+{
+  QgsDebugMsg( QString( "mDrawingStyle = %1" ).arg( mDrawingStyle ) );
+
+  QSettings mySettings;
+
+  QString myKey;
+  QString myDefault;
+
+  if ( mDrawingStyle == SingleBandGray || mDrawingStyle == MultiBandSingleBandGray )
+  {
+    myKey = "singleBand";
+    myDefault = "StretchToMinimumMaximum";
+  }
+  else if ( mDrawingStyle == MultiBandColor )
+  {
+    if ( dataProvider()->typeSize( dataProvider()->srcDataType( 1 ) ) == 8 )
+    {
+      myKey = "multiBandSingleByte";
+      myDefault = "NoEnhancement";
+    }
+    else
+    {
+      myKey = "multiBandMultiByte";
+      myDefault = "StretchToMinimumMaximum";
+    }
+  }
+
+  if ( myKey.isEmpty() )
+  {
+    QgsDebugMsg( "No default contrast enhancement for this drawing style" );
+  }
+  QgsDebugMsg( "myKey = " + myKey );
+
+  QString myAlgorithmString = mySettings.value( "/Raster/defaultContrastEnhancementAlgorithm/" + myKey, myDefault ).toString();
+  QgsDebugMsg( "myAlgorithmString = " + myAlgorithmString );
+
+  QgsContrastEnhancement::ContrastEnhancementAlgorithm myAlgorithm = QgsContrastEnhancement::contrastEnhancementAlgorithmFromString( myAlgorithmString );
+
+  if ( myAlgorithm == QgsContrastEnhancement::NoEnhancement )
+  {
+    return;
+  }
+
+  QString myLimitsString = mySettings.value( "/Raster/defaultContrastEnhancementLimits", "CumulativeCut" ).toString();
+  ContrastEnhancementLimits myLimits = contrastEnhancementLimitsFromString( myLimitsString );
+
+  setContrastEnhancementAlgorithm( myAlgorithm, myLimits );
+}
+
+QString QgsRasterLayer::contrastEnhancementLimitsAsString( ContrastEnhancementLimits theLimits )
+{
+  switch ( theLimits )
+  {
+    case QgsRasterLayer::ContrastEnhancementMinMax:
+      return "MinMax";
+      break;
+    case QgsRasterLayer::ContrastEnhancementStdDev:
+      return "StdDev";
+      break;
+    case QgsRasterLayer::ContrastEnhancementCumulativeCut:
+      return "CumulativeCut";
+      break;
+    default:
+      break;
+  }
+  return "None";
+}
+
+QgsRasterLayer::ContrastEnhancementLimits QgsRasterLayer::contrastEnhancementLimitsFromString( QString theLimits )
+{
+  if ( theLimits == "MinMax" )
+  {
+    return ContrastEnhancementMinMax;
+  }
+  else if ( theLimits == "StdDev" )
+  {
+    return ContrastEnhancementStdDev;
+  }
+  else if ( theLimits == "CumulativeCut" )
+  {
+    return ContrastEnhancementCumulativeCut;
+  }
+  return ContrastEnhancementNone;
 }
 
 /**
@@ -2141,8 +2218,8 @@ void QgsRasterLayer::setRenderer( QgsRasterRenderer* theRenderer )
   mPipe.set( theRenderer );
 }
 
+#if 0
 // not sure if we want it
-/*
 void QgsRasterLayer::setResampleFilter( QgsRasterResampleFilter* resampleFilter )
 {
   QgsDebugMsg( "Entered" );
@@ -2153,7 +2230,8 @@ void QgsRasterLayer::setResampleFilter( QgsRasterResampleFilter* resampleFilter 
     QgsDebugMsg( "Cannot set resample filter." );
   }
 }
-*/
+#endif
+
 void QgsRasterLayer::showProgress( int theValue )
 {
   emit progressUpdate( theValue );

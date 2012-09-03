@@ -33,6 +33,17 @@ QgsSingleBandPseudoColorRenderer::~QgsSingleBandPseudoColorRenderer()
   delete mShader;
 }
 
+QgsRasterInterface * QgsSingleBandPseudoColorRenderer::clone() const
+{
+  QgsRasterShader *shader = 0;
+  if ( mShader )
+  {
+    shader = new QgsRasterShader( mShader->minimumValue(), mShader->maximumValue() );
+  }
+  QgsSingleBandPseudoColorRenderer * renderer = new QgsSingleBandPseudoColorRenderer( 0, mBand, shader );
+  return renderer;
+}
+
 void QgsSingleBandPseudoColorRenderer::setShader( QgsRasterShader* shader )
 {
   delete mShader;
@@ -106,6 +117,12 @@ void * QgsSingleBandPseudoColorRenderer::readBlock( int bandNo, QgsRectangle  co
     for ( int j = 0; j < width; ++j )
     {
       val = readValue( rasterData, rasterType, currentRasterPos );
+      if ( mInput->isNoDataValue( mBand, val ) )
+      {
+        imageScanLine[j] = myDefaultColor;
+        ++currentRasterPos;
+        continue;
+      }
       if ( !mShader->shade( val, &red, &green, &blue ) )
       {
         imageScanLine[j] = myDefaultColor;

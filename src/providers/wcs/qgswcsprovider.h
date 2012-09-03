@@ -32,6 +32,7 @@
 #include <QDomElement>
 #include <QHash>
 #include <QMap>
+#include <QNetworkRequest>
 #include <QVector>
 #include <QUrl>
 
@@ -76,6 +77,8 @@ class QgsWcsProvider : public QgsRasterDataProvider, QgsGdalProviderBase
 
     //! Destructor
     virtual ~QgsWcsProvider();
+
+    QgsRasterInterface * clone() const;
 
     /*! Get the QgsCoordinateReferenceSystem for this layer
      * @note Must be reimplemented by each provider.
@@ -412,6 +415,13 @@ class QgsWcsProvider : public QgsRasterDataProvider, QgsGdalProviderBase
 
     QgsCoordinateReferenceSystem mCrs;
 
+    // Fix for servers using bbox 1 px bigger
+    bool mFixBox;
+
+    // Fix for rasters rotated by GeoServer
+    bool mFixRotate;
+
+    QNetworkRequest::CacheLoadControl mGetCoverageCacheLoadControl;
 };
 
 

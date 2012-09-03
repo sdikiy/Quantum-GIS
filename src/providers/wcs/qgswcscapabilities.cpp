@@ -211,7 +211,10 @@ bool QgsWcsCapabilities::retrieveServerCapabilities( )
   {
     // 1.0.0 - VERSION
     // 1.1.0 - AcceptVersions (not supported by UMN Mapserver 6.0.3 - defaults to latest 1.1
-    versions << "AcceptVersions=1.1,1.0" << "VERSION=1.0";
+    // We prefer 1.0 because 1.1 has many issues, each server implements it in defferent
+    // way with various particularities
+    // It may happen that server supports 1.1.0 but gives error for 1.1
+    versions << "VERSION=1.0.0" << "AcceptVersions=1.1.0,1.0.0";
   }
 
   foreach ( QString v, versions )
@@ -271,8 +274,18 @@ bool QgsWcsCapabilities::describeCoverage( QString const &identifier, bool force
 
   if ( coverage->described && ! forceRefresh ) return true;
 
-  QString url = prepareUri( mUri.param( "url" ) ) + "SERVICE=WCS&REQUEST=DescribeCoverage&COVERAGE=" + coverage->identifier;
-  url += "&VERSION=" + mVersion;
+  QString url = prepareUri( mUri.param( "url" ) ) + "SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=" + mVersion;
+
+  if ( mVersion.startsWith( "1.0" ) )
+  {
+    url += "&COVERAGE=" + coverage->identifier;
+  }
+  else if ( mVersion.startsWith( "1.1" ) )
+  {
+    // in 1.1.0, 1.1.1, 1.1.2 the name of param is 'identifier'
+    // but in KVP 'identifiers'
+    url += "&IDENTIFIERS=" + coverage->identifier;
+  }
 
   if ( ! sendRequest( url ) ) { return false; }
 
@@ -384,12 +397,21 @@ bool QgsWcsCapabilities::parseCapabilitiesDom( QByteArray const &xml, QgsWcsCapa
     tagName != "Capabilities"  // 1.1, tags seen: Capabilities, wcs:Capabilities
   )
   {
-    mErrorTitle = tr( "Dom Exception" );
-    mErrorFormat = "text/plain";
-    mError = tr( "Could not get WCS capabilities in the expected format (DTD): no %1 found.\nThis might be due to an incorrect WCS Server URL.\nTag:%3\nResponse was:\n%4" )
-             .arg( "Capabilities" )
-             .arg( docElem.tagName() )
-             .arg( QString( xml ) );
+    if ( tagName == "ExceptionReport" )
+    {
+      mErrorTitle = tr( "Exception" );
+      mErrorFormat = "text/plain";
+      mError = tr( "Could not get WCS capabilities: %1" ).arg( domElementText( docElem, "Exception.ExceptionText" ) );
+    }
+    else
+    {
+      mErrorTitle = tr( "Dom Exception" );
+      mErrorFormat = "text/plain";
+      mError = tr( "Could not get WCS capabilities in the expected format (DTD): no %1 found.\nThis might be due to an incorrect WCS Server URL.\nTag:%3\nResponse was:\n%4" )
+               .arg( "Capabilities" )
+               .arg( docElem.tagName() )
+               .arg( QString( xml ) );
+    }
 
     QgsLogger::debug( "Dom Exception: " + mError );
 
@@ -570,7 +592,7 @@ QList<double> QgsWcsCapabilities::parseDoubles( const QString &text )
 
 QString QgsWcsCapabilities::crsUrnToAuthId( const QString &text )
 {
-  QString authid;
+  QString authid = text; // may be also non URN, for example 'EPSG:4326'
 
   // URN format: urn:ogc:def:objectType:authority:version:code
   // URN example: urn:ogc:def:crs:EPSG::4326
@@ -728,6 +750,12 @@ bool QgsWcsCapabilities::parseDescribeCoverageDom10( QByteArray const &xml, QgsW
     gridElement = domElement( coverageOfferingElement, "domainSet.spatialDomain.Grid" );
   }
 
+  // If supportedCRSs.nativeCRSs is not defined we try to get it from RectifiedGrid
+  if ( coverage->nativeCrs.isEmpty() )
+  {
+    coverage->nativeCrs = gridElement.attribute( "srsName" );
+  }
+
   if ( !gridElement.isNull() )
   {
     QList<int> low = parseInts( domElementText( gridElement, "limits.GridEnvelope.low" ) );
@@ -743,7 +771,7 @@ bool QgsWcsCapabilities::parseDescribeCoverageDom10( QByteArray const &xml, QgsW
         coverage->hasSize = true;
       }
     }
-    // RectifiedGrid has also gml:origin which we dont need I think (attention however
+    // RectifiedGrid has also gml:origin which we don't need I think (attention however
     // it should contain gml:Point but mapserver 6.0.3 / WCS 1.0.0 is using gml:pos instead)
     // RectifiedGrid also contains 2 gml:offsetVector which could be used to get resolution
     // but it should be sufficient to calc resolution from size
@@ -926,6 +954,25 @@ bool QgsWcsCapabilities::parseDescribeCoverageDom11( QByteArray const &xml, QgsW
     }
   }
 
+  QStringList formats = domElementsTexts( docElem, "CoverageDescription.SupportedFormat" );
+  // There could be formats from GetCapabilities
+  if ( formats.size() > 0 )
+  {
+    coverage->supportedFormat = formats;
+  }
+
+
+  QStringList crss = domElementsTexts( docElem, "CoverageDescription.SupportedCRS" );
+  QSet<QString> authids; // Set, in case one CRS is in more formats (URN, non URN)
+  foreach ( QString crs, crss )
+  {
+    authids.insert( crsUrnToAuthId( crs ) );
+  }
+  if ( authids.size() > 0 )
+  {
+    coverage->supportedCrs = authids.toList();
+  }
+
   coverage->described = true;
 
   return true;
@@ -952,6 +999,7 @@ void QgsWcsCapabilities::parseCoverageSummary( QDomElement const & e, QgsWcsCove
       if ( tagName == "SupportedFormat" )
       {
         // image/tiff, ...
+        // Formats may be here (UMN Mapserver) or may not (GeoServer)
         coverageSummary.supportedFormat << el.text();
       }
       else if ( tagName == "SupportedCRS" )
