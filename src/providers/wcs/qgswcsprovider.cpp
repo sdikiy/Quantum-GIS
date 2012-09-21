@@ -171,11 +171,14 @@ QgsWcsProvider::QgsWcsProvider( QString const &uri )
   // in that case we continue without CRS and user is asked for it
   //if ( mCoverageCrs.isEmpty() ) return;
 
+  // Native size
   mWidth = mCoverageSummary.width;
   mHeight = mCoverageSummary.height;
   mHasSize = mCoverageSummary.hasSize;
 
-  QgsDebugMsg( QString( "mWidth = %1 mHeight = %2" ).arg( mWidth ).arg( mHeight ) ) ;
+  QgsDebugMsg( QString( "mWidth = %1 mHeight = %2" ).arg( mWidth ).arg( mHeight ) );
+
+  // TODO: Consider if/how to recalculate mWidth, mHeight if non native CRS is used
 
   if ( !calculateExtent() )
   {
@@ -277,56 +280,62 @@ QgsWcsProvider::QgsWcsProvider( QString const &uri )
 
     QgsDebugMsg( QString( "myGdalDataType[%1] = %2" ).arg( i - 1 ).arg( myGdalDataType ) );
     mSrcGdalDataType.append( myGdalDataType );
-    // TODO: This could be shared with GDAL provider
-    int isValid = false;
 
     // UMN Mapserver does not automaticaly set null value, METADATA wcs_rangeset_nullvalue must be used
     // http://lists.osgeo.org/pipermail/mapserver-users/2010-April/065328.html
 
-    // TODO:
-
+    // TODO: This could be shared with GDAL provider
+    int isValid = false;
     double myNoDataValue = GDALGetRasterNoDataValue( gdalBand, &isValid );
     if ( isValid )
     {
       QgsDebugMsg( QString( "GDALGetRasterNoDataValue = %1" ).arg( myNoDataValue ) ) ;
-      mGdalDataType.append( myGdalDataType );
+      mSrcNoDataValue.append( myNoDataValue );
+      mSrcHasNoDataValue.append( true );
+      mUseSrcNoDataValue.append( true );
     }
     else
     {
-      // But we need a null value in case of reprojection and BTW also for
-      // aligned margines
-      switch ( dataTypeFromGdal( myGdalDataType ) )
-      {
-
-        case QgsRasterDataProvider::Byte:
-          // Use longer data type to avoid conflict with real data
-          myNoDataValue = -32768.0;
-          mGdalDataType.append( GDT_Int16 );
-          break;
-        case QgsRasterDataProvider::Int16:
-          myNoDataValue = -2147483648.0;
-          mGdalDataType.append( GDT_Int32 );
-          break;
-        case QgsRasterDataProvider::UInt16:
-          myNoDataValue = -2147483648.0;
-          mGdalDataType.append( GDT_Int32 );
-          break;
-        case QgsRasterDataProvider::Int32:
-          myNoDataValue = -2147483648.0;
-          mGdalDataType.append( myGdalDataType );
-          break;
-        case QgsRasterDataProvider::UInt32:
-          myNoDataValue = 4294967295.0;
-          mGdalDataType.append( myGdalDataType );
-          break;
-        default:
-          myNoDataValue = std::numeric_limits<int>::max();
-          // Would NaN work well?
-          //myNoDataValue = std::numeric_limits<double>::quiet_NaN();
-          mGdalDataType.append( myGdalDataType );
-      }
+      mSrcNoDataValue.append( std::numeric_limits<double>::quiet_NaN() );
+      mSrcHasNoDataValue.append( false );
+      mUseSrcNoDataValue.append( false );
     }
-    mNoDataValue.append( myNoDataValue );
+    // It may happen that nodata value given by GDAL is wrong and it has to be
+    // disabled by user, in that case we need another value to be used for nodata
+    // (for reprojection for example) -> always internaly represent as wider type
+    // with mInternalNoDataValue in reserve.
+    int myInternalGdalDataType = myGdalDataType;
+    double myInternalNoDataValue;
+    switch ( srcDataType( i ) )
+    {
+      case QgsRasterDataProvider::Byte:
+        myInternalNoDataValue = -32768.0;
+        myInternalGdalDataType = GDT_Int16;
+        break;
+      case QgsRasterDataProvider::Int16:
+        myInternalNoDataValue = -2147483648.0;
+        myInternalGdalDataType = GDT_Int32;
+        break;
+      case QgsRasterDataProvider::UInt16:
+        myInternalNoDataValue = -2147483648.0;
+        myInternalGdalDataType = GDT_Int32;
+        break;
+      case QgsRasterDataProvider::Int32:
+        // We believe that such values is no used in real data
+        myInternalNoDataValue = -2147483648.0;
+        break;
+      case QgsRasterDataProvider::UInt32:
+        // We believe that such values is no used in real data
+        myInternalNoDataValue = 4294967295.0;
+        break;
+      default: // Float32, Float64
+        //myNoDataValue = std::numeric_limits<int>::max();
+        // NaN should work well
+        myInternalNoDataValue = std::numeric_limits<double>::quiet_NaN();
+    }
+    mGdalDataType.append( myInternalGdalDataType );
+    mInternalNoDataValue.append( myInternalNoDataValue );
+    QgsDebugMsg( QString( "mInternalNoDataValue[%1] = %2" ).arg( i - 1 ).arg( mInternalNoDataValue[i-1] ) );
 
     // TODO: what to do if null values from DescribeCoverage differ?
     if ( !mCoverageSummary.nullValues.contains( myNoDataValue ) )
@@ -334,11 +343,9 @@ QgsWcsProvider::QgsWcsProvider( QString const &uri )
       QgsDebugMsg( QString( "noDataValue %1 is missing in nullValues from CoverageDescription" ).arg( myNoDataValue ) );
     }
 
-    mValidNoDataValue = true;
-
     QgsDebugMsg( QString( "mSrcGdalDataType[%1] = %2" ).arg( i - 1 ).arg( mSrcGdalDataType[i-1] ) );
     QgsDebugMsg( QString( "mGdalDataType[%1] = %2" ).arg( i - 1 ).arg( mGdalDataType[i-1] ) );
-    QgsDebugMsg( QString( "mNoDataValue[%1] = %2" ).arg( i - 1 ).arg( mNoDataValue[i-1] ) );
+    QgsDebugMsg( QString( "mSrcNoDataValue[%1] = %2" ).arg( i - 1 ).arg( mSrcNoDataValue[i-1] ) );
 
     // Create and store color table
     // TODO: never tested because mapserver (6.0.3) does not support color tables
@@ -534,6 +541,11 @@ void QgsWcsProvider::readBlock( int bandNo, QgsRectangle  const & viewExtent, in
       QgsDebugMsg( QString( "pixelSize = %1" ).arg( pixelSize ) );
       int size = width * height * pixelSize;
       void * tmpData = malloc( size );
+      if ( ! tmpData )
+      {
+        QgsDebugMsg( QString( "Couldn't allocate memory of %1 bytes" ).arg( size ) );
+        return;
+      }
       GDALRasterIO( gdalBand, GF_Read, 0, 0, width, height, tmpData, width, height, ( GDALDataType ) mGdalDataType[bandNo-1], 0, 0 );
       for ( int i = 0; i < pixelHeight; i++ )
       {
@@ -1066,15 +1078,6 @@ int QgsWcsProvider::bandCount() const
   return mBandCount;
 }
 
-double  QgsWcsProvider::noDataValue() const
-{
-  if ( mNoDataValue.size() > 0 )
-  {
-    return mNoDataValue[0];
-  }
-  return std::numeric_limits<int>::max(); // should not happen or be used
-}
-
 // this is only called once when statistics are calculated
 // TODO
 int QgsWcsProvider::xBlockSize() const
@@ -1288,7 +1291,8 @@ bool QgsWcsProvider::calculateExtent()
   // Prefer to use extent from capabilities / coverage description because
   // transformation from WGS84 increases the extent
   mCoverageExtent = mCoverageSummary.boundingBoxes.value( mCoverageCrs );
-  if ( !mCoverageExtent.isEmpty() && !mCoverageExtent.isFinite() )
+  QgsDebugMsg( "mCoverageCrs = " + mCoverageCrs + " mCoverageExtent = " + mCoverageExtent.toString() );
+  if ( !mCoverageExtent.isEmpty() && mCoverageExtent.isFinite() )
   {
     QgsDebugMsg( "mCoverageExtent = " + mCoverageExtent.toString() );
     return true;
@@ -1308,9 +1312,11 @@ bool QgsWcsProvider::calculateExtent()
     //QgsDebugMsg( "qgisSrsDest: " + qgisSrsDest.toWkt() );
 
     mCoordinateTransform = new QgsCoordinateTransform( qgisSrsSource, qgisSrsDest );
+
   }
 
   QgsDebugMsg( "mCoverageSummary.wgs84BoundingBox= " + mCoverageSummary.wgs84BoundingBox.toString() );
+
   // Convert to the user's CRS as required
   try
   {
@@ -1503,19 +1509,21 @@ QString QgsWcsProvider:: htmlRow( const QString &text1, const QString &text2 )
   return "<tr>" + htmlCell( text1 ) +  htmlCell( text2 ) + "</tr>";
 }
 
-bool QgsWcsProvider::identify( const QgsPoint& thePoint, QMap<QString, QString>& theResults )
+QMap<int, void *> QgsWcsProvider::identify( const QgsPoint & thePoint )
 {
   QgsDebugMsg( "Entered" );
-  theResults.clear();
+  QMap<int, void *> results;
 
   if ( !extent().contains( thePoint ) )
   {
     // Outside the raster
     for ( int i = 1; i <= bandCount(); i++ )
     {
-      theResults[ generateBandName( i )] = tr( "out of extent" );
+      void * data = VSIMalloc( dataTypeSize( i ) / 8 );
+      writeValue( data, dataType( i ), 0, noDataValue( i ) );
+      results.insert( i, data );
     }
-    return true;
+    return results;
   }
 
   // It would be nice to use last cached block if possible, unfortunately we don't know
@@ -1556,7 +1564,7 @@ bool QgsWcsProvider::identify( const QgsPoint& thePoint, QMap<QString, QString>&
   if ( !mCachedGdalDataset ||
        !mCachedViewExtent.contains( thePoint ) )
   {
-    return false; // should not happen
+    return results; // should not happen
   }
 
   double x = thePoint.x();
@@ -1575,31 +1583,20 @@ bool QgsWcsProvider::identify( const QgsPoint& thePoint, QMap<QString, QString>&
   for ( int i = 1; i <= GDALGetRasterCount( mCachedGdalDataset ); i++ )
   {
     GDALRasterBandH gdalBand = GDALGetRasterBand( mCachedGdalDataset, i );
-    double value;
 
+    void * data = VSIMalloc( dataTypeSize( i ) / 8 );
     CPLErr err = GDALRasterIO( gdalBand, GF_Read, col, row, 1, 1,
-                               &value, 1, 1, GDT_Float64, 0, 0 );
+                               data, 1, 1, ( GDALDataType ) mGdalDataType[i-1], 0, 0 );
 
     if ( err != CPLE_None )
     {
       QgsLogger::warning( "RasterIO error: " + QString::fromUtf8( CPLGetLastErrorMsg() ) );
     }
 
-    QString v;
-
-    if ( mValidNoDataValue && ( fabs( value - mNoDataValue[i-1] ) <= TINY_VALUE || value != value ) )
-    {
-      v = tr( "null (no data)" );
-    }
-    else
-    {
-      v.setNum( value );
-    }
-
-    theResults[ generateBandName( i )] = v;
+    results.insert( i, data );
   }
 
-  return true;
+  return results;
 }
 
 QString QgsWcsProvider::identifyAsText( const QgsPoint &point )

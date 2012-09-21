@@ -99,6 +99,8 @@ QgsLabelingGui::QgsLabelingGui( QgsPalLabeling* lbl, QgsVectorLayer* layer, QgsM
   int distUnitIndex = lyr.distInMapUnits ? 1 : 0;
   mXQuadOffset = lyr.xQuadOffset;
   mYQuadOffset = lyr.yQuadOffset;
+  mCentroidRadioWhole->setChecked( lyr.centroidWhole );
+  mCentroidFrame->setVisible( false );
   switch ( lyr.placement )
   {
     case QgsPalLayerSettings::AroundPoint:
@@ -106,6 +108,8 @@ QgsLabelingGui::QgsLabelingGui( QgsPalLabeling* lbl, QgsVectorLayer* layer, QgsM
       radAroundCentroid->setChecked( true );
       spinDistPoint->setValue( lyr.dist );
       mPointDistanceUnitComboBox->setCurrentIndex( distUnitIndex );
+      mCentroidFrame->setVisible( layer->geometryType() == QGis::Polygon );
+
       //spinAngle->setValue( lyr.angle );
       break;
     case QgsPalLayerSettings::OverPoint:
@@ -126,6 +130,7 @@ QgsLabelingGui::QgsLabelingGui( QgsPalLabeling* lbl, QgsVectorLayer* layer, QgsM
       mPointOffsetYOffsetSpinBox->setValue( lyr.yOffset );
       mPointOffsetUnitsComboBox->setCurrentIndex( lyr.labelOffsetInMapUnits ? 1 : 0 );
       mPointOffsetAngleSpinBox->setValue( lyr.angleOffset );
+      mCentroidFrame->setVisible( layer->geometryType() == QGis::Polygon );
 
       break;
     case QgsPalLayerSettings::Line:
@@ -162,6 +167,7 @@ QgsLabelingGui::QgsLabelingGui( QgsPalLabeling* lbl, QgsVectorLayer* layer, QgsM
   sliderPriority->setValue( lyr.priority );
   chkNoObstacle->setChecked( !lyr.obstacle );
   chkLabelPerFeaturePart->setChecked( lyr.labelPerPart );
+  mPalShowAllLabelsForLayerChkBx->setChecked( lyr.displayAll );
   chkMergeLines->setChecked( lyr.mergeLines );
   mMinSizeSpinBox->setValue( lyr.minFeatureSize );
   chkAddDirectionSymbol->setChecked( lyr.addDirectionSymbol );
@@ -261,10 +267,40 @@ QgsLabelingGui::QgsLabelingGui( QgsPalLabeling* lbl, QgsVectorLayer* layer, QgsM
   {
     connect( quadrantRadios[i], SIGNAL( toggled( bool ) ), this, SLOT( updateQuadrant() ) );
   }
+
+  // Label tab collapsed groupboxes
+  chkBuffer->setCollapsed( true );
+  mFontMultiLineGroupBox->setCollapsed( true );
+  chkFormattedNumbers->setCollapsed( true );
+  chkScaleBasedVisibility->setCollapsed( true );
+
+  // Data defined tab collapsed groupboxes
+  mBufferAttributesPropertiesGroupBox->setCollapsed( true );
+  mFontAttributePropertiesGroupBox->setCollapsed( true );
+
+  connect( groupBox_mPreview,
+           SIGNAL( collapsedStateChanged( QgsCollapsibleGroupBox* ) ),
+           this,
+           SLOT( collapseSample( QgsCollapsibleGroupBox* ) ) );
 }
 
 QgsLabelingGui::~QgsLabelingGui()
 {
+}
+
+void QgsLabelingGui::collapseSample( QgsCollapsibleGroupBox* grpbx )
+{
+  if ( grpbx->isCollapsed() )
+  {
+    QList<int> splitSizes = mFontPreviewSplitter->sizes();
+    if ( splitSizes[0] > grpbx->height() )
+    {
+      int delta = splitSizes[0] - grpbx->height();
+      splitSizes[0] -= delta;
+      splitSizes[1] += delta;
+      mFontPreviewSplitter->setSizes( splitSizes );
+    }
+  }
 }
 
 void QgsLabelingGui::apply()
@@ -289,6 +325,7 @@ QgsPalLayerSettings QgsLabelingGui::layerSettings()
   lyr.dist = 0;
   lyr.placementFlags = 0;
 
+  lyr.centroidWhole = mCentroidRadioWhole->isChecked();
   if (( stackedPlacement->currentWidget() == pagePoint && radAroundPoint->isChecked() )
       || ( stackedPlacement->currentWidget() == pagePolygon && radAroundCentroid->isChecked() ) )
   {
@@ -348,6 +385,7 @@ QgsPalLayerSettings QgsLabelingGui::layerSettings()
   lyr.priority = sliderPriority->value();
   lyr.obstacle = !chkNoObstacle->isChecked();
   lyr.labelPerPart = chkLabelPerFeaturePart->isChecked();
+  lyr.displayAll = mPalShowAllLabelsForLayerChkBx->isChecked();
   lyr.mergeLines = chkMergeLines->isChecked();
   if ( chkScaleBasedVisibility->isChecked() )
   {
@@ -818,15 +856,20 @@ void QgsLabelingGui::changeBufferColor()
 
 void QgsLabelingGui::updateOptions()
 {
+  mCentroidFrame->setVisible( false );
   if (( stackedPlacement->currentWidget() == pagePoint && radAroundPoint->isChecked() )
       || ( stackedPlacement->currentWidget() == pagePolygon && radAroundCentroid->isChecked() ) )
   {
     stackedOptions->setCurrentWidget( pageOptionsPoint );
+    mCentroidFrame->setVisible( stackedPlacement->currentWidget() == pagePolygon
+                                && radAroundCentroid->isChecked() );
   }
   else if (( stackedPlacement->currentWidget() == pagePoint && radOverPoint->isChecked() )
            || ( stackedPlacement->currentWidget() == pagePolygon && radOverCentroid->isChecked() ) )
   {
     stackedOptions->setCurrentWidget( pageOptionsPointOffset );
+    mCentroidFrame->setVisible( stackedPlacement->currentWidget() == pagePolygon
+                                && radOverCentroid->isChecked() );
   }
   else if (( stackedPlacement->currentWidget() == pageLine && radLineParallel->isChecked() )
            || ( stackedPlacement->currentWidget() == pagePolygon && radPolygonPerimeter->isChecked() )
@@ -1000,15 +1043,10 @@ void QgsLabelingGui::disableDataDefinedAlignment()
   mHorizontalAlignmentComboBox->setEnabled( false );
   mVerticalAlignmentComboBox->setCurrentIndex( mVerticalAlignmentComboBox->findText( "" ) );
   mVerticalAlignmentComboBox->setEnabled( false );
-  mRotationComboBox->setCurrentIndex( mRotationComboBox->findText( "" ) );
-  mRotationComboBox->setEnabled( false );
-  chkPreserveRotation->setEnabled( false );
 }
 
 void QgsLabelingGui::enableDataDefinedAlignment()
 {
   mHorizontalAlignmentComboBox->setEnabled( true );
   mVerticalAlignmentComboBox->setEnabled( true );
-  mRotationComboBox->setEnabled( true );
-  chkPreserveRotation->setEnabled( true );
 }

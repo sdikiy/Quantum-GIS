@@ -773,15 +773,15 @@ static QVariant fcnRound( const QVariantList& values , QgsFeature *f, QgsExpress
   Q_UNUSED( f );
   if ( values.length() == 2 )
   {
-      double number = getDoubleValue( values.at( 0 ), parent );
-      double scaler = pow( 10.0, getIntValue( values.at( 1 ), parent ) );
-      return QVariant( qRound( number * scaler ) / scaler );
+    double number = getDoubleValue( values.at( 0 ), parent );
+    double scaler = pow( 10.0, getIntValue( values.at( 1 ), parent ) );
+    return QVariant( qRound( number * scaler ) / scaler );
   }
 
   if ( values.length() == 1 )
   {
-      double number = getIntValue( values.at( 0 ), parent );
-      return QVariant( qRound( number) ).toInt();
+    double number = getIntValue( values.at( 0 ), parent );
+    return QVariant( qRound( number ) ).toInt();
   }
 
   return QVariant();
@@ -789,14 +789,14 @@ static QVariant fcnRound( const QVariantList& values , QgsFeature *f, QgsExpress
 
 static QVariant fcnScale( const QVariantList&, QgsFeature*, QgsExpression* parent )
 {
-    return QVariant( parent->scale() );
+  return QVariant( parent->scale() );
 }
 
 static QVariant fcnFormatNumber( const QVariantList& values, QgsFeature*, QgsExpression* parent )
 {
-    double value = getDoubleValue( values.at(0), parent );
-    int places = getIntValue( values.at(1), parent );
-    return QString( "%L1" ).arg( value, 0, 'f', places );
+  double value = getDoubleValue( values.at( 0 ), parent );
+  int places = getIntValue( values.at( 1 ), parent );
+  return QString( "%L1" ).arg( value, 0, 'f', places );
 }
 
 QList<QgsExpression::FunctionDef> QgsExpression::gmBuiltinFunctions;
@@ -950,10 +950,10 @@ bool QgsExpression::needsGeometry()
 void QgsExpression::initGeomCalculator()
 {
   mCalc = new QgsDistanceArea;
-  mCalc->setEllipsoidalMode( false );
   QSettings settings;
-  QString ellipsoid = settings.value( "/qgis/measure/ellipsoid", "WGS84" ).toString();
+  QString ellipsoid = settings.value( "/qgis/measure/ellipsoid", GEO_NONE ).toString();
   mCalc->setEllipsoid( ellipsoid );
+  mCalc->setEllipsoidalMode( false );
 }
 
 bool QgsExpression::prepare( const QgsFieldMap& fields )

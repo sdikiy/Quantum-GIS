@@ -32,6 +32,25 @@ class TestQgsWcsPublicServers: public QObject
 {
     Q_OBJECT;
   public:
+    // Known problem
+    struct Issue
+    {
+      QStringList versions; // version regex
+      QStringList coverages; // coverage regex
+      QString description; // problem description
+      Issue( const QString & d ) : description( d ) {}
+    };
+    struct Server
+    {
+      Server( ) {}
+      Server( const QString & u ) : url( u ) {}
+      QString url; // URL
+      QList<TestQgsWcsPublicServers::Issue> issues;
+    };
+
+
+    TestQgsWcsPublicServers( const QString & cacheDirPath, int maxCoverages, const QString & server = QString(), const QString & coverage = QString(), const QString &version = QString(), bool force = false );
+
     void init();
     void test();
     void report();
@@ -42,9 +61,23 @@ class TestQgsWcsPublicServers: public QObject
 
     QMap<QString, QString> readLog( QString theFileName );
 
+    QStringList issueDescriptions( const QString & url, const QString & coverage, const QString &version );
+
+    QString mCacheDirPath;
     QDir mCacheDir;
-    QString mReport;
-    QStringList mHead;
+
     // Max coverages to test per server/version
     int mMaxCoverages;
+
+    QString mServer;
+    QString mCoverage;
+    QString mVersion;
+
+    // Force cached
+    bool mForce;
+
+    QString mReport;
+    QStringList mHead;
+
+    QList<TestQgsWcsPublicServers::Server> mServers;
 };

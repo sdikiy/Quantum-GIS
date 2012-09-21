@@ -10,12 +10,15 @@ class QgsRectangle
 %TypeHeaderCode
 #include <qgsrectangle.h>
 %End
-
+ 
  public:
     //! Constructor
     QgsRectangle(double xmin=0, double ymin=0, double xmax=0, double ymax=0);
     //! Construct a rectangle from two points. The rectangle is normalized after construction.
     QgsRectangle(const QgsPoint & p1, const QgsPoint & p2);
+    //! Construct a rectangle from a QRectF. The rectangle is normalized after construction.
+    //@note added in 2.0
+    QgsRectangle(const QRectF & qRectF );
     //! Copy constructor
     QgsRectangle(const QgsRectangle &other);
     //! Destructor
@@ -56,7 +59,7 @@ class QgsRectangle
     //! Scale the rectangle around its center point
     void scale(double, const QgsPoint *c =0);
     //! Expand the rectangle to support zoom out scaling
-    // @deprecated use scale instead
+    // @deprecated in 1.9 use scale instead
     void expand(double, const QgsPoint *c = 0) /Deprecated/;
     //! return the intersection with the given rectangle
     QgsRectangle intersect(const QgsRectangle *rect);
@@ -76,6 +79,12 @@ class QgsRectangle
     bool isEmpty() const;
     //! returns string representation in Wkt form
     QString asWktCoordinates() const;
+    //! returns string representation as WKT Polygon
+    //@note added in 2.0
+    QString asWktPolygon() const;
+    //! returns a QRectF with same coordinates.
+    //@note added in 2.0
+    QRectF toRectF() const;
     //! returns string representation of form xmin,ymin xmax,ymax
     QString toString(bool automaticPrecision = false) const;
     //! overloaded toString that allows precision of numbers to be set

@@ -68,7 +68,9 @@ def getQgisTestApp():
     if QGISAPP is None:
         myGuiFlag = True  # All test will run qgis in gui mode
 
+        # Note: QGIS_PREFIX_PATH is evaluated in QgsApplication - no need to mess with it here.
         QGISAPP = QgsApplication(sys.argv, myGuiFlag)
+
         QGISAPP.initQgis()
         s = QGISAPP.showSettings()
         print s

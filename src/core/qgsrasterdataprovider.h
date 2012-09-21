@@ -76,7 +76,7 @@ class CORE_EXPORT QgsRasterDataProvider : public QgsDataProvider, public QgsRast
     {
       UndefinedColorInterpretation = 0,
       /*! Greyscale */                                      GrayIndex = 1,
-      /*! Paletted (see associated color table) */          PaletteIndex = 2,
+      /*! Paletted (see associated color table) */          PaletteIndex = 2, // indexed color table
       /*! Red band of RGBA image */                         RedBand = 3,
       /*! Green band of RGBA image */                       GreenBand = 4,
       /*! Blue band of RGBA image */                        BlueBand = 5,
@@ -91,7 +91,8 @@ class CORE_EXPORT QgsRasterDataProvider : public QgsDataProvider, public QgsRast
       /*! Y Luminance */                                    YCbCr_YBand = 14,
       /*! Cb Chroma */                                      YCbCr_CbBand = 15,
       /*! Cr Chroma */                                      YCbCr_CrBand = 16,
-      /*! Max current value */                              ColorInterpretationMax = 16
+      /*! Continuous palette, QGIS addition, GRASS */       ContinuousPalette = 17,
+      /*! Max current value */                              ColorInterpretationMax = 17
     };
 
     // Progress types
@@ -294,10 +295,29 @@ class CORE_EXPORT QgsRasterDataProvider : public QgsDataProvider, public QgsRast
     virtual double readValue( void *data, int type, int index );
 
     /* Return true if source band has no data value */
-    virtual bool srcHasNoDataValue( int bandNo ) const { Q_UNUSED( bandNo ); return false; }
+    virtual bool srcHasNoDataValue( int bandNo ) const { return mSrcHasNoDataValue.value( bandNo -1 ); }
+
+    /** \brief Get source nodata value usage */
+    virtual bool useSrcNoDataValue( int bandNo ) const { return mUseSrcNoDataValue.value( bandNo -1 ); }
+
+    /** \brief Set source nodata value usage */
+    virtual void setUseSrcNoDataValue( int bandNo, bool use );
 
     /** value representing null data */
-    virtual double noDataValue() const { return 0; }
+    //virtual double noDataValue() const { return 0; }
+
+    /** Value representing currentno data.
+     *  WARNING: this value returned by this method is not constant. It may change
+     *  for example if user disable use of source no data value. */
+    virtual double noDataValue( int bandNo ) const;
+
+    /** Value representing no data value. */
+    virtual double srcNoDataValue( int bandNo ) const { return mSrcNoDataValue.value( bandNo -1 ); }
+
+    virtual void setUserNoDataValue( int bandNo, QList<QgsRasterInterface::Range> noData );
+
+    /** Get list of user no data value ranges */
+    virtual  QList<QgsRasterInterface::Range> userNoDataValue( int bandNo ) const { return mUserNoDataValue.value( bandNo -1 ); }
 
     virtual double minimumValue( int bandNo ) const { Q_UNUSED( bandNo ); return 0; }
     virtual double maximumValue( int bandNo ) const { Q_UNUSED( bandNo ); return 0; }
@@ -414,9 +434,18 @@ class CORE_EXPORT QgsRasterDataProvider : public QgsDataProvider, public QgsRast
     virtual QString metadata() = 0;
 
     /** \brief Identify raster value(s) found on the point position */
-    virtual bool identify( const QgsPoint & point, QMap<QString, QString>& results );
+    //virtual bool identify( const QgsPoint & point, QMap<QString, QString>& results );
 
-    virtual bool identify( const QgsPoint & point, QMap<int, QString>& results );
+    //virtual bool identify( const QgsPoint & point, QMap<int, QString>& results );
+
+    /** \brief Identify raster value(s) found on the point position
+     * @param point coordinates in data source CRS
+     * @return list of pointers to data blocks for all bands,
+     *         caller is responsible to free the allocated memory,
+     *         readValue() may be used to get values
+     */
+    // TODO: Consider QVariant or similar instead of void*
+    virtual QMap<int, void *> identify( const QgsPoint & point );
 
     /**
      * \brief Identify details from a server (e.g. WMS) from the last screen update
@@ -501,7 +530,7 @@ class CORE_EXPORT QgsRasterDataProvider : public QgsDataProvider, public QgsRast
     void setDpi( int dpi ) {mDpi = dpi;}
 
     /** \brief Is the NoDataValue Valid */
-    bool isNoDataValueValid() const { return mValidNoDataValue; }
+    //bool isNoDataValueValid() const { return mValidNoDataValue; }
 
     static QStringList cStringList2Q_( char ** stringList );
 
@@ -518,6 +547,7 @@ class CORE_EXPORT QgsRasterDataProvider : public QgsDataProvider, public QgsRast
     virtual QDateTime dataTimestamp() const { return QDateTime(); }
 
     /**Writes into the provider datasource*/
+    // TODO: add data type (may be defferent from band type)
     virtual bool write( void* data, int band, int width, int height, int xOffset, int yOffset )
     {
       Q_UNUSED( data );
@@ -579,11 +609,32 @@ class CORE_EXPORT QgsRasterDataProvider : public QgsDataProvider, public QgsRast
     @note: this member has been added in version 1.2*/
     int mDpi;
 
-    /** \brief Cell value representing no data. e.g. -9999, indexed from 0  */
-    QList<double> mNoDataValue;
+    /** \brief Cell value representing original source no data. e.g. -9999, indexed from 0  */
+    QList<double> mSrcNoDataValue;
+
+    /** \brief Source nodata value exist */
+    QList<bool> mSrcHasNoDataValue;
+
+    /** \brief Use source nodata value. User can disable usage of source nodata
+     *  value as nodata. It may happen that a value is wrongly given by GDAL
+     *  as nodata (e.g. 0) and it has to be treated as regular value. */
+    QList<bool> mUseSrcNoDataValue;
+
+    /** \brief Internal value representing nodata. Indexed from 0.
+     *  This values is used to represent nodata if no source nodata is available
+     *  or if the source nodata use was disabled.
+     *  It would be also possible to use wider type only if nodata is really necessary
+     *  in following interfaces, but that could make difficult to subclass
+     *  QgsRasterInterface.
+     */
+    QList<double> mInternalNoDataValue;
 
     /** \brief Flag indicating if the nodatavalue is valid*/
-    bool mValidNoDataValue;
+    //bool mValidNoDataValue;
+
+    /** \brief List of lists of user defined additional no data values
+     *  for each band, indexed from 0 */
+    QList< QList<QgsRasterInterface::Range> > mUserNoDataValue;
 
     QgsRectangle mExtent;
 

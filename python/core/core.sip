@@ -63,10 +63,15 @@
 %Include qgsproviderregistry.sip
 %Include qgsrasterbandstats.sip
 %Include qgsrasterdataprovider.sip
+%Include qgsrasterchecker.sip
+%Include qgsrasterfilewriter.sip
 %Include qgsrasterinterface.sip
 %Include qgsrasterlayer.sip
+%Include qgsrasterpipe.sip
 %Include qgsrasterpyramid.sip
+%Include qgsrasterprojector.sip
 %Include qgsrasterrenderer.sip
+%Include qgsrasterresamplefilter.sip
 %Include qgsrasterresampler.sip
 %Include qgsrastershader.sip
 %Include qgsrastershaderfunction.sip
@@ -75,6 +80,7 @@
 %Include qgsrectangle.sip
 %Include qgsrendercontext.sip
 %Include qgsrenderer.sip
+%Include qgsrenderchecker.sip
 %Include qgsrunprocess.sip
 %Include qgsscalecalculator.sip
 %Include qgssinglesymbolrenderer.sip
@@ -92,10 +98,12 @@
 %Include qgsvectorlayer.sip
 %Include qgsvectorlayerimport.sip
 %Include qgsvectoroverlay.sip
+%Include qgscredentials.sip
 
 %Include qgsnetworkaccessmanager.sip
 
 %Include symbology-ng-core.sip
+%Include qgspallabeling.sip
 
 %Include qgsgpsconnection.sip
 %Include qgsgpsconnectionregistry.sip

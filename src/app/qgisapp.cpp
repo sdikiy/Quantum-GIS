@@ -192,6 +192,7 @@
 // GDAL/OGR includes
 //
 #include <ogr_api.h>
+#include <proj_api.h>
 
 //
 // Other includes
@@ -290,7 +291,7 @@ const int AFTER_RECENT_PATHS = 321;
   if the project file is null then
   set title text to just application name and version
   else
-  set set title text to the the project file name
+  set set title text to the project file name
   else
   set the title text to project title
   */
@@ -511,9 +512,9 @@ QgisApp::QgisApp( QSplashScreen *splash, bool restorePlugins, QWidget * parent, 
 
   // create the notification widget for macros
   mMacrosWarn = QgsMessageBar::createMessage( tr( "Security warning:" ),
-                                              tr( "macros have been disabled." ),
-                                              QgsApplication::getThemeIcon( "/mIconWarn.png" ),
-                                              mInfoBar );
+                tr( "macros have been disabled." ),
+                QgsApplication::getThemeIcon( "/mIconWarn.png" ),
+                mInfoBar );
 
   QToolButton *btnEnableMacros = new QToolButton( mMacrosWarn );
   btnEnableMacros->setText( tr( "Enable" ) );
@@ -1943,6 +1944,12 @@ QgsPalLabeling *QgisApp::palLabeling()
   return mLBL;
 }
 
+QgsMessageBar* QgisApp::messageBar()
+{
+  Q_ASSERT( mInfoBar );
+  return mInfoBar;
+}
+
 void QgisApp::initLegend()
 {
   mMapLegend->setWhatsThis( tr( "Map legend that displays all the layers currently on the map canvas. Click on the check box to turn a layer on or off. Double click on a layer in the legend to customize its appearance and set other properties." ) );
@@ -1975,7 +1982,7 @@ void QgisApp::initLegend()
 
   mMapLayerOrder->setWhatsThis( tr( "Map layer list that displays all layers in drawing order." ) );
   mLayerOrderDock = new QDockWidget( tr( "Layer order" ), this );
-  mLayerOrderDock->setObjectName( "Legend" );
+  mLayerOrderDock->setObjectName( "LayerOrder" );
   mLayerOrderDock->setAllowedAreas( Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea );
 
   w = new QWidget( this );
@@ -2314,8 +2321,11 @@ void QgisApp::about()
 #endif
     versionString += "</td>";
 
-
     versionString += "<td>" + tr( "QWT Version" ) + "</td><td>" + QWT_VERSION_STR + "</td>";
+
+    versionString += "</tr><tr>";
+
+    versionString += "<td>" + tr( "PROJ.4 Version" ) + "</td><td>" + QString::number( PJ_VERSION ) + "</td>";
 
 #ifdef QGISDEBUG
     versionString += "</tr><tr><td colspan=4>" + tr( "This copy of QGIS writes debugging output." ) + "</td>";
@@ -4005,7 +4015,10 @@ void QgisApp::saveAsRasterFile()
     return;
   }
 
-  QgsRasterLayerSaveAsDialog d( rasterLayer, rasterLayer->dataProvider(),  mMapCanvas->extent(), rasterLayer->crs(), mMapCanvas->mapRenderer()->destinationCrs() );
+  QgsRasterLayerSaveAsDialog d( rasterLayer, rasterLayer->dataProvider(),
+                                mMapCanvas->extent(), rasterLayer->crs(),
+                                mMapCanvas->mapRenderer()->destinationCrs(),
+                                this );
   if ( d.exec() == QDialog::Accepted )
   {
     QgsRasterFileWriter fileWriter( d.outputFileName() );
@@ -4017,6 +4030,9 @@ void QgisApp::saveAsRasterFile()
     }
 
     QProgressDialog pd( 0, tr( "Abort..." ), 0, 0 );
+    // Show the dialo immediately because cloning pipe can take some time (WCS)
+    pd.setLabelText( QObject::tr( "Reading raster" ) );
+    pd.show();
     pd.setWindowModality( Qt::WindowModal );
 
     // TODO: show error dialogs
@@ -5655,6 +5671,10 @@ void QgisApp::options()
     {
       mScaleEdit->updateScales();
     }
+
+    qobject_cast<QgsMeasureTool*>( mMapTools.mMeasureDist )->updateSettings();
+    qobject_cast<QgsMeasureTool*>( mMapTools.mMeasureArea )->updateSettings();
+    qobject_cast<QgsMapToolMeasureAngle*>( mMapTools.mMeasureAngle )->updateSettings();
   }
 
   delete optionsDialog;
@@ -6807,6 +6827,10 @@ void QgisApp::projectProperties()
   int  myBlueInt = QgsProject::instance()->readNumEntry( "Gui", "/CanvasColorBluePart", 255 );
   QColor myColor = QColor( myRedInt, myGreenInt, myBlueInt );
   mMapCanvas->setCanvasColor( myColor ); // this is fill color before rendering onto canvas
+
+  qobject_cast<QgsMeasureTool*>( mMapTools.mMeasureDist )->updateSettings();
+  qobject_cast<QgsMeasureTool*>( mMapTools.mMeasureArea )->updateSettings();
+  qobject_cast<QgsMapToolMeasureAngle*>( mMapTools.mMeasureAngle )->updateSettings();
 
   // Set the window title.
   setTitleBarText_( *this );

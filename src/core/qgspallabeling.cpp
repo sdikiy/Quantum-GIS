@@ -38,7 +38,7 @@
 #include <QTime>
 #include <QPainter>
 
-#include "qgsdiagram.h"
+#include "diagram/qgsdiagram.h"
 #include "qgsdiagramrendererv2.h"
 #include "qgslabelsearchtree.h"
 #include "qgsexpression.h"
@@ -147,6 +147,7 @@ QgsPalLayerSettings::QgsPalLayerSettings()
   xOffset = 0;
   yOffset = 0;
   angleOffset = 0;
+  centroidWhole = false;
   //textFont = QFont();
   textNamedStyle = QString( "" );
   textColor = Qt::black;
@@ -167,6 +168,7 @@ QgsPalLayerSettings::QgsPalLayerSettings()
   decimals = 3;
   plusSign = false;
   labelPerPart = false;
+  displayAll = false;
   mergeLines = false;
   minFeatureSize = 0.0;
   vectorScaleFactor = 1.0;
@@ -192,6 +194,7 @@ QgsPalLayerSettings::QgsPalLayerSettings( const QgsPalLayerSettings& s )
   xOffset = s.xOffset;
   yOffset = s.yOffset;
   angleOffset = s.angleOffset;
+  centroidWhole = s.centroidWhole;
   textFont = s.textFont;
   textNamedStyle = s.textNamedStyle;
   textColor = s.textColor;
@@ -212,6 +215,7 @@ QgsPalLayerSettings::QgsPalLayerSettings( const QgsPalLayerSettings& s )
   decimals = s.decimals;
   plusSign = s.plusSign;
   labelPerPart = s.labelPerPart;
+  displayAll = s.displayAll;
   mergeLines = s.mergeLines;
   minFeatureSize = s.minFeatureSize;
   vectorScaleFactor = s.vectorScaleFactor;
@@ -272,7 +276,7 @@ static void _writeDataDefinedPropertyMap( QgsVectorLayer* layer, const QMap< Qgs
   {
     return;
   }
-  for ( int i = 0; i < 20; ++i )
+  for ( int i = 0; i < QgsPalLayerSettings::PropertyCount; ++i )
   {
     QMap< QgsPalLayerSettings::DataDefinedProperties, int >::const_iterator it = propertyMap.find(( QgsPalLayerSettings::DataDefinedProperties )i );
     QVariant propertyValue;
@@ -361,6 +365,7 @@ void QgsPalLayerSettings::readFromLayer( QgsVectorLayer* layer )
   xOffset = layer->customProperty( "labeling/xOffset", QVariant( 0.0 ) ).toDouble();
   yOffset = layer->customProperty( "labeling/yOffset", QVariant( 0.0 ) ).toDouble();
   angleOffset = layer->customProperty( "labeling/angleOffset", QVariant( 0.0 ) ).toDouble();
+  centroidWhole = layer->customProperty( "labeling/centroidWhole", QVariant( false ) ).toBool();
   QString fontFamily = layer->customProperty( "labeling/fontFamily" ).toString();
   double fontSize = layer->customProperty( "labeling/fontSize" ).toDouble();
   int fontWeight = layer->customProperty( "labeling/fontWeight" ).toInt();
@@ -392,6 +397,7 @@ void QgsPalLayerSettings::readFromLayer( QgsVectorLayer* layer )
   decimals = layer->customProperty( "labeling/decimals" ).toInt();
   plusSign = layer->customProperty( "labeling/plussign" ).toInt();
   labelPerPart = layer->customProperty( "labeling/labelPerPart" ).toBool();
+  displayAll = layer->customProperty( "labeling/displayAll", QVariant( false ) ).toBool();
   mergeLines = layer->customProperty( "labeling/mergeLines" ).toBool();
   addDirectionSymbol = layer->customProperty( "labeling/addDirectionSymbol" ).toBool();
   minFeatureSize = layer->customProperty( "labeling/minFeatureSize" ).toDouble();
@@ -418,6 +424,7 @@ void QgsPalLayerSettings::writeToLayer( QgsVectorLayer* layer )
   layer->setCustomProperty( "labeling/xOffset", xOffset );
   layer->setCustomProperty( "labeling/yOffset", yOffset );
   layer->setCustomProperty( "labeling/angleOffset", angleOffset );
+  layer->setCustomProperty( "labeling/centroidWhole", centroidWhole );
 
   layer->setCustomProperty( "labeling/fontFamily", textFont.family() );
   layer->setCustomProperty( "labeling/namedStyle", textNamedStyle );
@@ -448,6 +455,7 @@ void QgsPalLayerSettings::writeToLayer( QgsVectorLayer* layer )
   layer->setCustomProperty( "labeling/decimals", decimals );
   layer->setCustomProperty( "labeling/plussign", plusSign );
   layer->setCustomProperty( "labeling/labelPerPart", labelPerPart );
+  layer->setCustomProperty( "labeling/displayAll", displayAll );
   layer->setCustomProperty( "labeling/mergeLines", mergeLines );
   layer->setCustomProperty( "labeling/addDirectionSymbol", addDirectionSymbol );
   layer->setCustomProperty( "labeling/minFeatureSize", minFeatureSize );
@@ -672,10 +680,29 @@ void QgsPalLayerSettings::registerFeature( QgsVectorLayer* layer,  QgsFeature& f
     return;
   }
 
+  // whether we're going to create a centroid for polygon
+  bool centroidPoly = (( placement == QgsPalLayerSettings::AroundPoint
+                         || placement == QgsPalLayerSettings::OverPoint )
+                       && geom->type() == QGis::Polygon );
+
+  // CLIP the geometry if it is bigger than the extent
+  // don't clip if centroid is requested for whole feature
+  bool do_clip = false;
+  if ( !centroidPoly || ( centroidPoly && !centroidWhole ) )
+  {
+    do_clip = !extentGeom->contains( geom );
+    if ( do_clip )
+    {
+      geom = geom->intersection( extentGeom ); // creates new geometry
+      if ( !geom )
+      {
+        return;
+      }
+    }
+  }
+
   // convert centroids to points before processing to use GEOS instead of PAL calculation
-  if (( placement == QgsPalLayerSettings::AroundPoint
-        || placement == QgsPalLayerSettings::OverPoint )
-      && geom->type() == QGis::Polygon )
+  if ( centroidPoly )
   {
     QgsGeometry* centroidpt = geom->centroid();
     if ( centroidpt->isGeosValid() && extentGeom->contains( centroidpt ) )
@@ -688,41 +715,33 @@ void QgsPalLayerSettings::registerFeature( QgsVectorLayer* layer,  QgsFeature& f
     }
     else
     {
-      // invalid geom type, skip registering feature with PAL
+      // invalid geom type or outside extents
       return;
     }
   }
 
-  // CLIP the geometry if it is bigger than the extent
-  QgsGeometry* geomClipped = NULL;
-  GEOSGeometry* geos_geom;
-  bool do_clip = !extentGeom->contains( geom );
-  if ( do_clip )
-  {
-    geomClipped = geom->intersection( extentGeom ); // creates new geometry
-    if ( !geomClipped )
-    {
-      return;
-    }
-    geos_geom = geomClipped->asGeos();
-  }
-  else
-  {
-    geos_geom = geom->asGeos();
-  }
+  GEOSGeometry* geos_geom = geom->asGeos();
 
   if ( geos_geom == NULL )
     return; // invalid geometry
+
   GEOSGeometry* geos_geom_clone = GEOSGeom_clone( geos_geom );
-  if ( do_clip )
-    delete geomClipped;
 
   //data defined position / alignment / rotation?
   bool dataDefinedPosition = false;
   bool labelIsPinned = false;
   bool dataDefinedRotation = false;
   double xPos = 0.0, yPos = 0.0, angle = 0.0;
-  bool ddXPos, ddYPos;
+  bool ddXPos = false, ddYPos = false;
+
+  //data defined rotation?
+  QMap< DataDefinedProperties, int >::const_iterator rotIt = dataDefinedProperties.find( QgsPalLayerSettings::Rotation );
+  if ( rotIt != dataDefinedProperties.constEnd() )
+  {
+    dataDefinedRotation = true;
+    angle = f.attributeMap().value( *rotIt ).toDouble() * M_PI / 180.0;
+
+  }
 
   QMap< DataDefinedProperties, int >::const_iterator dPosXIt = dataDefinedProperties.find( QgsPalLayerSettings::PositionX );
   if ( dPosXIt != dataDefinedProperties.constEnd() )
@@ -739,8 +758,8 @@ void QgsPalLayerSettings::registerFeature( QgsVectorLayer* layer,  QgsFeature& f
         dataDefinedPosition = true;
         labelIsPinned = true;
         //x/y shift in case of alignment
-        double xdiff = 0;
-        double ydiff = 0;
+        double xdiff = 0.0;
+        double ydiff = 0.0;
 
         //horizontal alignment
         QMap< DataDefinedProperties, int >::const_iterator haliIt = dataDefinedProperties.find( QgsPalLayerSettings::Hali );
@@ -786,12 +805,8 @@ void QgsPalLayerSettings::registerFeature( QgsVectorLayer* layer,  QgsFeature& f
           }
         }
 
-        //data defined rotation?
-        QMap< DataDefinedProperties, int >::const_iterator rotIt = dataDefinedProperties.find( QgsPalLayerSettings::Rotation );
-        if ( rotIt != dataDefinedProperties.constEnd() )
+        if ( dataDefinedRotation )
         {
-          dataDefinedRotation = true;
-          angle = f.attributeMap().value( *rotIt ).toDouble() * M_PI / 180;
           //adjust xdiff and ydiff because the hali/vali point needs to be the rotation center
           double xd = xdiff * cos( angle ) - ydiff * sin( angle );
           double yd = xdiff * sin( angle ) + ydiff * cos( angle );
@@ -806,18 +821,17 @@ void QgsPalLayerSettings::registerFeature( QgsVectorLayer* layer,  QgsFeature& f
           ct->transformInPlace( xPos, yPos, z );
         }
 
-        yPos += ydiff;
         xPos += xdiff;
-
+        yPos += ydiff;
       }
     }
   }
 
   // treat rotated labels of PAL layer point/centroid features as data defined
-  // does not flag label as pinned or rotatble
+  // does not flag label as pinned or rotateable
   // always set rotation center as if Center/Half were set for data defined
   bool overPointCentroid = false;
-  if ( !dataDefinedPosition
+  if ( !labelIsPinned
        && placement == QgsPalLayerSettings::OverPoint
        && geom->type() == QGis::Point )
   {
@@ -840,11 +854,14 @@ void QgsPalLayerSettings::registerFeature( QgsVectorLayer* layer,  QgsFeature& f
     double descentRatio = labelFontMetrics.descent() / labelFontMetrics.height();
     ydiff -= labelY * 0.5 * ( 1 - descentRatio );
 
-    if ( angleOffset != 0 )
+    if ( !dataDefinedRotation && angleOffset != 0 )
     {
-      angle = angleOffset * M_PI / 180; // convert to radians
-
       dataDefinedRotation = true;
+      angle = angleOffset * M_PI / 180; // convert to radians
+    }
+
+    if ( dataDefinedRotation )
+    {
       //adjust xdiff and ydiff for Center/Half
       double xd = xdiff * cos( angle ) - ydiff * sin( angle );
       double yd = xdiff * sin( angle ) + ydiff * cos( angle );
@@ -910,19 +927,17 @@ void QgsPalLayerSettings::registerFeature( QgsVectorLayer* layer,  QgsFeature& f
     double labelW = labelX;
     double labelH = labelY;
 
-    if ( angleOffset != 0 )
+    if ( dataDefinedRotation )
     {
       // use LabelPosition construction to calculate new rotated label dimensions
       pal::FeaturePart* fpart = new FeaturePart( feat, geom->asGeos() );
-      pal::LabelPosition* lp = new LabelPosition( 1, xPos, yPos, labelX, labelY,
-          ( angleOffset * M_PI / 180 ), 0.0, fpart );
+      pal::LabelPosition* lp = new LabelPosition( 1, xPos, yPos, labelX, labelY, angle, 0.0, fpart );
 
+      // lp->getWidth or lp->getHeight doesn't account for rotation, get bbox instead
       double amin[2], amax[2];
       lp->getBoundingBox( amin, amax );
       QgsRectangle lblrect = QgsRectangle( amin[0], amin[1], amax[0], amax[1] );
 
-//      labelW = lp->getWidth();
-//      labelH = lp->getHeight();
       labelW = lblrect.width();
       labelH = lblrect.height();
       delete fpart;
@@ -1114,7 +1129,8 @@ int QgsPalLabeling::prepareLayer( QgsVectorLayer* layer, QSet<int>& attrIndices,
 
   Layer* l = mPal->addLayer( layer->id().toUtf8().data(),
                              min_scale, max_scale, arrangement,
-                             METER, priority, lyr.obstacle, true, true );
+                             METER, priority, lyr.obstacle, true, true,
+                             lyr.displayAll );
 
   if ( lyr.placementFlags )
     l->setArrangementFlags( lyr.placementFlags );
@@ -1712,7 +1728,9 @@ void QgsPalLabeling::drawLabel( pal::LabelPosition* label, QPainter* painter, co
     painter->scale( 1.0 / lyr.rasterCompressFactor, 1.0 / lyr.rasterCompressFactor );
 
     double yMultiLineOffset = ( multiLineList.size() - 1 - i ) * lyr.fontMetrics->height();
-    painter->translate( QPointF( 0, - lyr.fontMetrics->descent() - yMultiLineOffset ) );
+    double ascentOffset = 0.0;
+    ascentOffset = lyr.fontMetrics->height() * 0.25 * lyr.fontMetrics->ascent() / lyr.fontMetrics->height();
+    painter->translate( QPointF( 0, - ascentOffset - yMultiLineOffset ) );
 
     if ( drawBuffer )
     {

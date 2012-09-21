@@ -81,6 +81,15 @@ public:
       Multiband
     } ;
 
+    /** \brief Contrast enhancement limits */
+    enum ContrastEnhancementLimits
+    {
+      ContrastEnhancementNone,
+      ContrastEnhancementMinMax,
+      ContrastEnhancementStdDev,
+      ContrastEnhancementCumulativeCut
+    };
+
     /** \brief A list containing on ContrastEnhancement object per raster band in this raster layer */
     typedef QList<QgsContrastEnhancement> ContrastEnhancementList;
 
@@ -163,7 +172,7 @@ public:
     int height();
 
     /** \brief Is the NoDataValue Valid */
-    bool isNoDataValueValid() const;
+    //bool isNoDataValueValid() const;
 
     /** \brief Accessor for mGrayMinimumMaximumEstimated */
     //bool isGrayMinimumMaximumEstimated() const; //removed with raster redesign
@@ -172,7 +181,7 @@ public:
     //bool isRGBMinimumMaximumEstimated() const; //removed with raster redesign
 
     /** \brief Accessor that returns the NO_DATA entry for this raster */
-    double noDataValue( bool* isValid = 0 );
+    //double noDataValue( bool* isValid = 0 );
 
     /** \brief Returns a pointer to the transparency object */
     //QgsRasterTransparency* rasterTransparency(); //removed with raster redesign
@@ -208,8 +217,10 @@ public:
     //void setUserDefinedRGBMinimumMaximum( bool theBool ); //removed with raster redesign
 
     /**Set raster renderer. Takes ownership of the renderer object*/
-    void setRenderer( QgsRasterRenderer* renderer );
+    void setRenderer( QgsRasterRenderer* renderer /Transfer/ );
     QgsRasterRenderer* renderer();
+
+    QgsRasterPipe * pipe();
 
     /** \brief Accessor to find out how many standard deviations are being plotted */
     double standardDeviations() const;
@@ -217,7 +228,7 @@ public:
     /** \brief  Accessor for transparent band name mapping */
     //QString transparentBandName() const; //removed with raster redesign
 
-    /**  \brief [ data provider interface ] Does this layer use a provider for setting/retrieving data? 
+    /**  \brief [ data provider interface ] Does this layer use a provider for setting/retrieving data?
      * @deprecated in 2.0
      */
     bool usesProvider() /Deprecated/;
@@ -262,14 +273,14 @@ public:
     /** \brief Wrapper for GDALComputeRasterMinMax with the estimate option
       \note added in v1.6 */
     void computeMinimumMaximumEstimates( int theBand, double& theMin /Out/, double& theMax /Out/ );
-    
+
     /** \brief Compute the actual minimum maximum pixel values based on the current (last) display extent */
     // (would need MethodCode directive) void computeMinimumMaximumFromLastExtent( int theBand, double* theMinMax );
 
     /** \brief Compute the actual minimum maximum pixel values based on the current (last) display extent */
     // (would need MethodCode directive) void computeMinimumMaximumFromLastExtent( QString theBand, double* theMinMax );
 
-    /**  \brief Compute the actual minimum maximum pixel values based on the current (last) display extent 
+    /**  \brief Compute the actual minimum maximum pixel values based on the current (last) display extent
       \note added in v1.6 */
     void computeMinimumMaximumFromLastExtent( int theBand, double& theMin /Out/, double& theMax /Out/ );
 
@@ -357,12 +368,12 @@ public:
     /** \brief Get an 100x100 pixmap of the color palette. If the layer has no palette a white pixmap will be returned */
     QPixmap paletteAsPixmap( int theBand = 1 );
 
-    /**  \brief [ data provider interface ] Which provider is being used for this Raster Layer? 
+    /**  \brief [ data provider interface ] Which provider is being used for this Raster Layer?
      * @note added in 2.0
      */
     QString providerType() const;
 
-    /**  \brief [ data provider interface ] Which provider is being used for this Raster Layer? 
+    /**  \brief [ data provider interface ] Which provider is being used for this Raster Layer?
      * @deprecated in 2.0
      */
     QString providerKey() const /Deprecated/;
@@ -374,7 +385,7 @@ public:
 //bool readColorTable( int theBandNumber, QList<QgsColorRampShader::ColorRampItem>* theList );
 
     /** \brief Simple reset function that set the noDataValue back to the value stored in the first raster band */
-    void resetNoDataValue();
+    //void resetNoDataValue();
 
     /** \brief Mutator for blue band name mapping */
     void setBlueBandName( const QString & theBandName );
@@ -420,7 +431,7 @@ public:
     void setMinimumValue( QString theBand, double theValue, bool theGenerateLookupTableFlag = true );
 
     /** \brief Mutator that allows the  NO_DATA entry for this raster to be overridden */
-    void setNoDataValue( double theNoData );
+    //void setNoDataValue( double theNoData );
 
     /** \brief Set the raster shader function to a user defined function
       \note ownership of the shader function is transfered to raster shader */

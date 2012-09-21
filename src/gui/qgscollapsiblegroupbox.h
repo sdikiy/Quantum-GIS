@@ -21,11 +21,14 @@
 #include "qgisgui.h"
 
 /** \ingroup gui
- * A groupbox that collapses/expands when toggled and draws an expand/collapse icon in lieu of checkbox.
- * Widget must be checkable for expand/collapse icon to appear.
+ * A groupbox that collapses/expands when toggled.
+ * @note Collapsible function not shown in promoted QtDesigner widgets.
  */
 
 #include <QGroupBox>
+
+class QToolButton;
+class QScrollArea;
 
 class GUI_EXPORT QgsCollapsibleGroupBox : public QGroupBox
 {
@@ -34,25 +37,48 @@ class GUI_EXPORT QgsCollapsibleGroupBox : public QGroupBox
   public:
     QgsCollapsibleGroupBox( QWidget *parent = 0 );
     QgsCollapsibleGroupBox( const QString &title, QWidget *parent = 0 );
+    ~QgsCollapsibleGroupBox();
 
     bool isCollapsed() const { return mCollapsed; }
-
-  signals:
-    void collapsed( QWidget* );
-    void expanded( QWidget* );
-
-  public slots:
-    void setToggled( bool toggled ) { setCollapsed( ! toggled ); }
     void setCollapsed( bool collapse );
 
-  protected:
-    void paintEvent( QPaintEvent * );
-    void showEvent( QShowEvent * event );
+    //! set this to false to not save/restore check and collapse state
+    void setSaveState( bool save ) { mSaveState = save; }
+    //! set this to false to not automatically scroll parent QScrollArea to this widget's contents when expanded
+    void setScrollOnExpand( bool scroll ) { mScrollOnExpand = scroll; }
 
-  private:
+  signals:
+    /** Signal emitted when groupbox collapsed/expanded state is changed, and when first shown */
+    void collapsedStateChanged( QgsCollapsibleGroupBox* );
+
+  public slots:
+    void checkToggled( bool ckd );
+    void toggleCollapsed();
+
+  protected slots:
+    void loadState();
+    void saveState();
+
+  protected:
+    void init();
+    void showEvent( QShowEvent *event );
+    void mouseReleaseEvent( QMouseEvent *event );
+    void changeEvent( QEvent *event );
+
+    void updateStyle();
+    QRect titleRect() const;
+    QString saveKey() const;
+
     bool mCollapsed;
-    QMargins mMargins;
-    QList< QWidget* > mHiddenWidgets;
+    bool mSaveState;
+    bool mInitFlat;
+    bool mScrollOnExpand;
+    bool mShown;
+    QScrollArea* mParentScrollArea;
+    QToolButton* mCollapseButton;
+
+    static QIcon mCollapseIcon;
+    static QIcon mExpandIcon;
 };
 
 #endif
