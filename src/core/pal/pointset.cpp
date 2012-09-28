@@ -966,7 +966,7 @@ namespace pal
     for ( i = 0; i < nbPoints; i++ )
     {
       j = i + 1; if ( j == nbPoints ) j = 0;
-      tmp = ( ( x[i] - x[0] ) * ( y[j] - y[0] ) - ( x[j] - x[0] ) * ( y[i] - y[0] ) );
+      tmp = (( x[i] - x[0] ) * ( y[j] - y[0] ) - ( x[j] - x[0] ) * ( y[i] - y[0] ) );
       cx += ( x[i] + x[j] - 2 * x[0] ) * tmp;
       cy += ( y[i] + y[j] - 2 * y[0] ) * tmp;
       A += tmp;

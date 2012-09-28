@@ -91,12 +91,12 @@ QgsWcsProvider::QgsWcsProvider( QString const &uri )
     , mPassword( QString::null )
     , mFixBox( false )
     , mFixRotate( false )
-    // TODO: optional
-    , mGetCoverageCacheLoadControl( QNetworkRequest::PreferCache )
+    , mCacheLoadControl( QNetworkRequest::PreferCache )
 {
   QgsDebugMsg( "constructing with uri '" + mHttpUri + "'." );
 
   mValid = false;
+  mCachedMemFilename = QString( "/vsimem/qgis/wcs/%0.dat" ).arg(( qlonglong )this );
 
   if ( !parseUri( uri ) ) return;
 
@@ -185,8 +185,6 @@ QgsWcsProvider::QgsWcsProvider( QString const &uri )
     QgsMessageLog::logMessage( tr( "Cannot calculate extent" ), tr( "WCS" ) );
     return;
   }
-
-  mCachedMemFilename = QString( "/vsimem/qgis/wcs/%0.dat" ).arg(( qlonglong )this );
 
   // Get small piece of coverage to find GDAL data type and nubmer of bands
   int bandNo = 0; // All bands
@@ -405,6 +403,28 @@ bool QgsWcsProvider::parseUri( QString uriString )
     setCoverageCrs( uri.param( "crs" ) );
   }
 
+  QString cache = uri.param( "cache" );
+  if ( !cache.isEmpty() )
+  {
+    if ( cache.compare( "AlwaysCache", Qt::CaseInsensitive ) == 0 )
+    {
+      mCacheLoadControl = QNetworkRequest::AlwaysCache;
+    }
+    else if ( cache.compare( "PreferCache", Qt::CaseInsensitive ) == 0 )
+    {
+      mCacheLoadControl = QNetworkRequest::PreferCache;
+    }
+    else if ( cache.compare( "PreferNetwork", Qt::CaseInsensitive ) == 0 )
+    {
+      mCacheLoadControl = QNetworkRequest::PreferNetwork;
+    }
+    else if ( cache.compare( "AlwaysNetwork", Qt::CaseInsensitive ) == 0 )
+    {
+      mCacheLoadControl = QNetworkRequest::AlwaysNetwork;
+    }
+  }
+  QgsDebugMsg( QString( "mCacheLoadControl = %1" ).arg( mCacheLoadControl ) ) ;
+
   return true;
 }
 
@@ -526,9 +546,31 @@ void QgsWcsProvider::readBlock( int bandNo, QgsRectangle  const & viewExtent, in
 
   if ( mCachedGdalDataset )
   {
-    // TODO band
     int width = GDALGetRasterXSize( mCachedGdalDataset );
     int height = GDALGetRasterYSize( mCachedGdalDataset );
+
+    // It may happen (Geoserver) that if requested BBOX is larger than coverage
+    // extent, the returned data cover intersection of requested BBOX and coverage
+    // extent scaled to requested WIDTH/HEIGHT => check extent
+    QgsRectangle cacheExtent = QgsGdalProviderBase::extent( mCachedGdalDataset );
+    QgsDebugMsg( "viewExtent = " + viewExtent.toString() );
+    QgsDebugMsg( "cacheExtent = " + cacheExtent.toString() );
+    // using doubleNear is too precise, example accetable difference:
+    // 179.9999999306699863 x 179.9999999306700431
+    if ( !doubleNearSig( cacheExtent.xMinimum(), viewExtent.xMinimum(), 10 ) ||
+         !doubleNearSig( cacheExtent.yMinimum(), viewExtent.yMinimum(), 10 ) ||
+         !doubleNearSig( cacheExtent.xMaximum(), viewExtent.xMaximum(), 10 ) ||
+         !doubleNearSig( cacheExtent.yMaximum(), viewExtent.yMaximum(), 10 ) )
+    {
+      QgsDebugMsg( "cacheExtent and viewExtent differ" );
+      QgsMessageLog::logMessage( tr( "Received coverage has wrong extent %1 (expected %2)" ).arg( cacheExtent.toString() ).arg( viewExtent.toString() ), tr( "WCS" ) );
+      // We are doing all possible to avoid this situation,
+      // If it happens, it would be possible to rescale the portion we get
+      // to only part of the data block, but it is better to left it
+      // blank, so that the problem may be discovered in its origin.
+      return;
+    }
+
     GDALRasterBandH gdalBand = GDALGetRasterBand( mCachedGdalDataset, bandNo );
     QgsDebugMsg( QString( "cached data width = %1 height = %2 (expected %3 x %4)" ).arg( width ).arg( height ).arg( pixelWidth ).arg( pixelHeight ) );
     // TODO: check type? , check band count?
@@ -717,7 +759,7 @@ void QgsWcsProvider::getCache( int bandNo, QgsRectangle  const & viewExtent, int
   QNetworkRequest request( url );
   setAuthorization( request );
   request.setAttribute( QNetworkRequest::CacheSaveControlAttribute, true );
-  request.setAttribute( QNetworkRequest::CacheLoadControlAttribute, mGetCoverageCacheLoadControl );
+  request.setAttribute( QNetworkRequest::CacheLoadControlAttribute, mCacheLoadControl );
   mCacheReply = QgsNetworkAccessManager::instance()->get( request );
   connect( mCacheReply, SIGNAL( finished() ), this, SLOT( cacheReplyFinished() ) );
   connect( mCacheReply, SIGNAL( downloadProgress( qint64, qint64 ) ), this, SLOT( cacheReplyProgress( qint64, qint64 ) ) );
@@ -768,6 +810,7 @@ void QgsWcsProvider::readBlock( int theBandNo, int xBlock, int yBlock, void *blo
 
 void QgsWcsProvider::cacheReplyFinished()
 {
+  QgsDebugMsg( QString( "mCacheReply->error() = %1" ).arg( mCacheReply->error() ) );
   if ( mCacheReply->error() == QNetworkReply::NoError )
   {
     QVariant redirect = mCacheReply->attribute( QNetworkRequest::RedirectionTargetAttribute );
@@ -778,6 +821,7 @@ void QgsWcsProvider::cacheReplyFinished()
       QgsDebugMsg( QString( "redirected getmap: %1" ).arg( redirect.toString() ) );
       mCacheReply = QgsNetworkAccessManager::instance()->get( QNetworkRequest( redirect.toUrl() ) );
       connect( mCacheReply, SIGNAL( finished() ), this, SLOT( cacheReplyFinished() ) );
+      connect( mCacheReply, SIGNAL( downloadProgress( qint64, qint64 ) ), this, SLOT( cacheReplyProgress( qint64, qint64 ) ) );
       return;
     }
 
@@ -1043,6 +1087,21 @@ void QgsWcsProvider::cacheReplyFinished()
   }
   else
   {
+    // Resend request if AlwaysCache
+    QNetworkRequest request = mCacheReply->request();
+    if ( request.attribute( QNetworkRequest::CacheLoadControlAttribute ).toInt() == QNetworkRequest::AlwaysCache )
+    {
+      QgsDebugMsg( "Resend request with PreferCache" );
+      request.setAttribute( QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferCache );
+
+      mCacheReply->deleteLater();
+
+      mCacheReply = QgsNetworkAccessManager::instance()->get( request );
+      connect( mCacheReply, SIGNAL( finished() ), this, SLOT( cacheReplyFinished() ) );
+      connect( mCacheReply, SIGNAL( downloadProgress( qint64, qint64 ) ), this, SLOT( cacheReplyProgress( qint64, qint64 ) ) );
+      return;
+    }
+
     mErrors++;
     if ( mErrors < 100 )
     {
@@ -1295,52 +1354,87 @@ bool QgsWcsProvider::calculateExtent()
   }
 
   // Prefer to use extent from capabilities / coverage description because
-  // transformation from WGS84 increases the extent
+  // transformation from WGS84 enlarges the extent
   mCoverageExtent = mCoverageSummary.boundingBoxes.value( mCoverageCrs );
   QgsDebugMsg( "mCoverageCrs = " + mCoverageCrs + " mCoverageExtent = " + mCoverageExtent.toString() );
   if ( !mCoverageExtent.isEmpty() && mCoverageExtent.isFinite() )
   {
     QgsDebugMsg( "mCoverageExtent = " + mCoverageExtent.toString() );
-    return true;
+    //return true;
   }
-
-  // Set up the coordinate transform from the WCS standard CRS:84 bounding
-  // box to the user's selected CRS
-  if ( !mCoordinateTransform )
+  else
   {
-    QgsCoordinateReferenceSystem qgisSrsSource;
-    QgsCoordinateReferenceSystem qgisSrsDest;
+    // Set up the coordinate transform from the WCS standard CRS:84 bounding
+    // box to the user's selected CRS
+    if ( !mCoordinateTransform )
+    {
+      QgsCoordinateReferenceSystem qgisSrsSource;
+      QgsCoordinateReferenceSystem qgisSrsDest;
 
-    //qgisSrsSource.createFromOgcWmsCrs( DEFAULT_LATLON_CRS );
-    qgisSrsSource.createFromOgcWmsCrs( "EPSG:4326" );
-    //QgsDebugMsg( "qgisSrsSource: " + qgisSrsSource.toWkt() );
-    qgisSrsDest.createFromOgcWmsCrs( mCoverageCrs );
-    //QgsDebugMsg( "qgisSrsDest: " + qgisSrsDest.toWkt() );
+      //qgisSrsSource.createFromOgcWmsCrs( DEFAULT_LATLON_CRS );
+      qgisSrsSource.createFromOgcWmsCrs( "EPSG:4326" );
+      //QgsDebugMsg( "qgisSrsSource: " + qgisSrsSource.toWkt() );
+      qgisSrsDest.createFromOgcWmsCrs( mCoverageCrs );
+      //QgsDebugMsg( "qgisSrsDest: " + qgisSrsDest.toWkt() );
 
-    mCoordinateTransform = new QgsCoordinateTransform( qgisSrsSource, qgisSrsDest );
+      mCoordinateTransform = new QgsCoordinateTransform( qgisSrsSource, qgisSrsDest );
 
-  }
+    }
 
-  QgsDebugMsg( "mCoverageSummary.wgs84BoundingBox= " + mCoverageSummary.wgs84BoundingBox.toString() );
+    QgsDebugMsg( "mCoverageSummary.wgs84BoundingBox= " + mCoverageSummary.wgs84BoundingBox.toString() );
 
-  // Convert to the user's CRS as required
-  try
-  {
-    mCoverageExtent = mCoordinateTransform->transformBoundingBox( mCoverageSummary.wgs84BoundingBox, QgsCoordinateTransform::ForwardTransform );
-  }
-  catch ( QgsCsException &cse )
-  {
-    Q_UNUSED( cse );
-    return false;
-  }
+    // Convert to the user's CRS as required
+    try
+    {
+      mCoverageExtent = mCoordinateTransform->transformBoundingBox( mCoverageSummary.wgs84BoundingBox, QgsCoordinateTransform::ForwardTransform );
+    }
+    catch ( QgsCsException &cse )
+    {
+      Q_UNUSED( cse );
+      return false;
+    }
 
-  //make sure extent does not contain 'inf' or 'nan'
-  if ( !mCoverageExtent.isFinite() )
-  {
-    return false;
+    //make sure extent does not contain 'inf' or 'nan'
+    if ( !mCoverageExtent.isFinite() )
+    {
+      return false;
+    }
   }
 
   QgsDebugMsg( "mCoverageExtent = " + mCoverageExtent.toString() );
+
+  // It may happen (GeoServer) that extent reported in spatialDomain.Envelope is larger  // than the coverage. Then if that larger BBOX is requested, the server returns
+  // request BBOX intersected with coverage box scaled to requested WIDTH and HEIGHT.
+  // GDAL WCS client does not suffer from this probably because it probably takes
+  // extent from lonLatEnvelope (it probably does not calculate it from
+  // spatialDomain.RectifiedGrid because calculated value is slightly different).
+
+  // To get the true extent (it can also be smaller than real if reported Envelope is
+  // than real smaller, but smaller is safer because data cannot be shifted) we make
+  // request of the whole extent cut the extent from spatialDomain.Envelope if
+  // necessary
+
+  getCache( 1, mCoverageExtent, 10, 10 );
+  if ( mCachedGdalDataset )
+  {
+    QgsRectangle cacheExtent = QgsGdalProviderBase::extent( mCachedGdalDataset );
+    QgsDebugMsg( "mCoverageExtent = " + mCoverageExtent.toString() );
+    QgsDebugMsg( "cacheExtent = " + cacheExtent.toString() );
+    if ( !doubleNearSig( cacheExtent.xMinimum(), mCoverageExtent.xMinimum(), 10 ) ||
+         !doubleNearSig( cacheExtent.yMinimum(), mCoverageExtent.yMinimum(), 10 ) ||
+         !doubleNearSig( cacheExtent.xMaximum(), mCoverageExtent.xMaximum(), 10 ) ||
+         !doubleNearSig( cacheExtent.yMaximum(), mCoverageExtent.yMaximum(), 10 ) )
+    {
+      QgsDebugMsg( "cacheExtent and mCoverageExtent differ, mCoverageExtent cut to cacheExtent" );
+      mCoverageExtent = cacheExtent;
+    }
+  }
+  else
+  {
+    QgsDebugMsg( "Cannot get cache to verify extent" );
+    return false;
+  }
+
   return true;
 }
 
